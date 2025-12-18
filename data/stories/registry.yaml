@@ -1,0 +1,21 @@
+# Registro de versiones de índices
+# Cada entrada documenta un índice en data/stories/<version>/
+#
+# Estructura por versión:
+#   created_at: fecha ISO
+#   splitter:
+#     type: SentenceSplitter | TokenTextSplitter
+#     params: {chunk_size, chunk_overlap}
+#   embed_model: nombre del modelo de embeddings
+#   notes: descripción corta
+
+# Ejemplo:
+# v1.0:
+#   created_at: "2024-01-15T10:30:00"
+#   splitter:
+#     type: SentenceSplitter
+#     params:
+#       chunk_size: 512
+#       chunk_overlap: 50
+#   embed_model: text-embedding-3-small
+#   notes: "Primera versión con Código Civil completo"
