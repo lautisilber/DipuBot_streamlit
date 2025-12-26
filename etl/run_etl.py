@@ -43,7 +43,7 @@ METADATA_COLUMNS = [
     "organismo_origen", "fecha_sancion", "numero_boletin", "fecha_boletin",
     "pagina_boletin", "titulo_resumido", "titulo_sumario", "texto_resumido",
     "observaciones", "texto_actualizado", "texto_original_link",
-    "texto_actualizado_link", "numero_ley_original", "numero_ley_actualiza", "year"
+    "texto_actualizado_link", "numero_ley_original", "numero_ley_actualizado", "year"
 ]
 
 TEXT_COLUMN = "texto_original"
@@ -133,7 +133,7 @@ def generate_embeddings_batch(
 def process_documents(
     documents: List[Dict[str, Any]],
     client: OpenAI,
-    splitter_type: str = "dummy",
+    splitter_type: str = "legal",
     batch_size: int = BATCH_SIZE
 ) -> List[ProcessedDocument]:
     """
@@ -273,7 +273,7 @@ def save_faiss_index(
 def run_etl(
     db_path: str = DATABASE_PATH,
     output_dir: str = FAISS_OUTPUT_DIR,
-    splitter_type: str = "dummy",
+    splitter_type: str = "legal",
     batch_size: int = BATCH_SIZE
 ) -> Dict[str, Any]:
     """
