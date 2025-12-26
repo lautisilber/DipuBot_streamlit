@@ -1,0 +1,89 @@
+# =========================
+# Python bytecode / cache
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# =========================
+# Virtual environments
+# (any depth)
+# =========================
+venv/
+.venv/
+env/
+.env/
+ENV/
+*/venv/
+*/.venv/
+*/env/
+*/.env/
+**/venv/
+**/.venv/
+**/env/
+**/.env/
+
+# =========================
+# Environment variables
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# Packaging / build
+# =========================
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# =========================
+# Logs
+# =========================
+*.log
+logs/
+
+# =========================
+# Test / coverage
+# =========================
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.tox/
+.nox/
+
+# =========================
+# Jupyter
+# =========================
+.ipynb_checkpoints/
+
+# =========================
+# IDEs / editors
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# MyPy / Ruff / Pyright
+# =========================
+.mypy_cache/
+.ruff_cache/
+.pyright/
+
+# =========================
+# SQLite / local data
+# =========================
+*.sqlite
+*.sqlite3
+*.db
