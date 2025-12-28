@@ -5,6 +5,7 @@ UI Streamlit para chat con documentos legales argentinos.
 Conecta con el módulo RAG que usa FAISS + OpenAI.
 """
 
+import os
 import streamlit as st
 from dotenv import load_dotenv
 
@@ -12,6 +13,11 @@ from chat.rag import initialize_rag, query
 from chat.config import validate_index_exists
 
 load_dotenv()
+
+
+def check_api_key():
+    """Verifica si hay API key de OpenAI configurada (env o session)."""
+    return bool(os.environ.get("OPENAI_API_KEY") or st.session_state.get("openai_api_key"))
 
 
 def init_session_state():
@@ -52,6 +58,45 @@ def display_sources(sources):
             st.markdown(f"- {source_text}")
 
 
+def render_sidebar():
+    """Renderiza el sidebar con configuración e información."""
+    with st.sidebar:
+        # Configuración de API key (solo si no está en .env)
+        if not os.environ.get("OPENAI_API_KEY"):
+            st.header("🔑 Configuración")
+            api_key = st.text_input(
+                "OpenAI API Key",
+                type="password",
+                value=st.session_state.get("openai_api_key", ""),
+                placeholder="sk-...",
+                help="Tu API key de OpenAI. Se guarda solo en esta sesión."
+            )
+            if api_key:
+                st.session_state.openai_api_key = api_key
+                os.environ["OPENAI_API_KEY"] = api_key
+            st.divider()
+        
+        st.header("ℹ️ Información")
+        st.markdown("""
+        Este chatbot responde preguntas sobre **legislación argentina** 
+        usando inteligencia artificial.
+        
+        **¿Cómo funciona?**
+        1. Tu pregunta se busca en una base de leyes
+        2. Se encuentran los fragmentos más relevantes
+        3. La IA genera una respuesta basada en esos textos
+        
+        **Ejemplos de preguntas:**
+        - ¿Se suspenden las PASO en 2025?
+        - ¿Qué es el Parque Nacional Laguna El Palmar?
+        - ¿Qué dice la ley sobre cardiopatías congénitas?
+        """)
+        
+        if st.button("🗑️ Limpiar conversación"):
+            st.session_state.messages = []
+            st.rerun()
+
+
 def main():
     st.set_page_config(
         page_title="Legal RAG Argentina",
@@ -64,12 +109,20 @@ def main():
     
     init_session_state()
     
+    # Renderizar sidebar primero (para que aparezca el input de API key)
+    render_sidebar()
+    
     # Verificar que existe el índice
     if not validate_index_exists():
         st.error(
             "❌ No se encontró el índice de búsqueda. "
             "Ejecutá primero el ETL: `cd etl && python3 run_etl.py`"
         )
+        st.stop()
+    
+    # Verificar API key
+    if not check_api_key():
+        st.warning("⚠️ Configurá tu API key de OpenAI en el sidebar para continuar.")
         st.stop()
     
     # Inicializar RAG (solo una vez)
@@ -118,28 +171,6 @@ def main():
                         "content": error_msg,
                         "sources": []
                     })
-    
-    # Sidebar con info
-    with st.sidebar:
-        st.header("ℹ️ Información")
-        st.markdown("""
-        Este chatbot responde preguntas sobre **legislación argentina** 
-        usando inteligencia artificial.
-        
-        **¿Cómo funciona?**
-        1. Tu pregunta se busca en una base de leyes
-        2. Se encuentran los fragmentos más relevantes
-        3. La IA genera una respuesta basada en esos textos
-        
-        **Ejemplos de preguntas:**
-        - ¿Se suspenden las PASO en 2025?
-        - ¿Qué es el Parque Nacional Laguna El Palmar?
-        - ¿Qué dice la ley sobre cardiopatías congénitas?
-        """)
-        
-        if st.button("🗑️ Limpiar conversación"):
-            st.session_state.messages = []
-            st.rerun()
 
 
 if __name__ == "__main__":
