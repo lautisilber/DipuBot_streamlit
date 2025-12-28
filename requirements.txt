@@ -1,6 +1,7 @@
 # Legal RAG Argentina - Dependencias mínimas
-llama-index
 streamlit
 python-dotenv
 openai
 pyyaml
+faiss-cpu
+numpy

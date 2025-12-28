@@ -2,40 +2,56 @@
 chat/config.py
 ==============
 Configuración centralizada para el módulo de chat/RAG.
-Define INDEX_VERSION y parámetros del modelo.
-
-Importante: INDEX_VERSION determina qué índice carga el chat.
-Debe coincidir con una carpeta existente en data/stories/.
+Define paths al índice FAISS y parámetros del modelo.
 """
 
 import os
 from pathlib import Path
+from typing import Optional, Tuple
 from dotenv import load_dotenv
 
 load_dotenv()
 
 # === Paths ===
-STORIES_DIR = Path("data/stories")
-
-# === Index Version ===
-# Esta es la versión del índice que usará el chat.
-# Modificar manualmente o vía .env según el índice deseado.
-INDEX_VERSION = os.getenv("INDEX_VERSION", "v1.0")
+# Directorio raíz del proyecto (relativo a este archivo)
+PROJECT_ROOT = Path(__file__).parent.parent
+INDEXED_DIR = PROJECT_ROOT / "data" / "indexed"
 
 # === Modelos ===
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "text-embedding-3-small")
 
 # === RAG Settings ===
-SIMILARITY_TOP_K = 5  # chunks a recuperar
+SIMILARITY_TOP_K = int(os.getenv("SIMILARITY_TOP_K", "5"))
 
 
-def get_index_path() -> Path:
-    """Retorna path al índice según INDEX_VERSION."""
-    return STORIES_DIR / INDEX_VERSION
+def find_latest_index() -> Tuple[Optional[Path], Optional[Path]]:
+    """
+    Encuentra el índice FAISS más reciente en data/indexed/.
+    
+    Returns:
+        Tuple de (index_path, metadata_path) o (None, None) si no existe
+    """
+    if not INDEXED_DIR.exists():
+        return None, None
+    
+    # Buscar archivos .faiss ordenados por nombre (tienen timestamp)
+    faiss_files = sorted(INDEXED_DIR.glob("*.faiss"), reverse=True)
+    
+    if not faiss_files:
+        return None, None
+    
+    latest_index = faiss_files[0]
+    # El metadata tiene el mismo timestamp pero con _metadata_ en lugar de _index_
+    latest_metadata = INDEXED_DIR / latest_index.name.replace("_index_", "_metadata_").replace(".faiss", ".json")
+    
+    if not latest_metadata.exists():
+        return None, None
+    
+    return latest_index, latest_metadata
 
 
 def validate_index_exists() -> bool:
-    """Verifica que el índice configurado exista."""
-    path = get_index_path()
-    return path.exists() and path.is_dir()
+    """Verifica que exista al menos un índice FAISS."""
+    index_path, metadata_path = find_latest_index()
+    return index_path is not None and metadata_path is not None
