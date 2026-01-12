@@ -227,7 +227,7 @@ Respondé basándote en el contexto proporcionado."""
             {"role": "user", "content": user_prompt}
         ],
         temperature=0.3,  # Bajo para respuestas más precisas
-        max_tokens=1000,
+        #max_tokens=1000,
     )
     
     return response.choices[0].message.content

@@ -18,7 +18,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 INDEXED_DIR = PROJECT_ROOT / "data" / "indexed"
 
 # === Modelos ===
-LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
+LLM_MODEL = os.getenv("LLM_MODEL", "gpt-5.2")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "text-embedding-3-small")
 
 # === RAG Settings ===
