@@ -153,7 +153,9 @@ def main():
         with st.chat_message("assistant"):
             with st.spinner("Buscando en la legislación..."):
                 try:
-                    response, sources = query(prompt)
+                    # Pasar historial previo (excluyendo el mensaje actual)
+                    conversation_history = st.session_state.messages[:-1] if len(st.session_state.messages) > 1 else []
+                    response, sources = query(prompt, conversation_history)
                     st.write(response)
                     display_sources(sources)
                     
