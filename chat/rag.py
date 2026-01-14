@@ -106,6 +106,8 @@ def load_index() -> VectorStoreIndex:
         FileNotFoundError si no existe el índice
         UnicodeDecodeError si hay problemas de codificación
     """
+    from llama_index.vector_stores.faiss import FaissVectorStore
+    
     index_dir = find_latest_index()
     
     if index_dir is None:
@@ -122,10 +124,22 @@ def load_index() -> VectorStoreIndex:
         )
         Settings.embed_model = embed_model
         
-        # Cargar índice desde storage
-        # Nota: El archivo default__vector_store.json contiene datos binarios de FAISS
-        # LlamaIndex debería manejarlo correctamente, pero parece que hay problemas de codificación
-        storage_context = StorageContext.from_defaults(persist_dir=str(index_dir))
+        # SOLUCIÓN AL ERROR DE ENCODING:
+        # El archivo default__vector_store.json contiene datos binarios de FAISS,
+        # no JSON en formato UTF-8. Debemos usar FaissVectorStore.from_persist_dir()
+        # que internamente usa faiss.read_index() para leer el archivo binario correctamente.
+        
+        # 1. Cargar FAISS vector store (maneja datos binarios correctamente)
+        vector_store = FaissVectorStore.from_persist_dir(persist_dir=str(index_dir))
+        
+        # 2. Cargar otros componentes de storage (docstore, index_store)
+        #    Pasamos el vector_store ya cargado para evitar que intente parsearlo como JSON
+        storage_context = StorageContext.from_defaults(
+            persist_dir=str(index_dir),
+            vector_store=vector_store
+        )
+        
+        # 3. Cargar índice desde storage
         index = load_index_from_storage(storage_context)
         
         return index
