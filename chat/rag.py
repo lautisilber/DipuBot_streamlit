@@ -1,7 +1,7 @@
 """
 chat/rag.py
 ===========
-Lógica de RAG usando FAISS: carga índice, busca chunks similares,
+Lógica de RAG usando LlamaIndex: carga índice, busca chunks similares,
 y genera respuestas con OpenAI GPT.
 
 Uso desde Streamlit:
@@ -11,16 +11,27 @@ Uso desde Streamlit:
 """
 
 import os
-import json
-import sqlite3
+import sys
+# import sqlite3  # Comentado: ya no se usa SQLite, los nodes de LlamaIndex tienen el texto completo
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional
 
-import numpy as np
-import faiss
+# Configurar encoding UTF-8 explícitamente para evitar problemas de codificación
+# Útil cuando LlamaIndex lee archivos JSON con caracteres especiales
+if sys.getdefaultencoding() != 'utf-8':
+    import io
+    # Reconfigurar stdout/stderr para UTF-8
+    if hasattr(sys.stdout, 'buffer'):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    if hasattr(sys.stderr, 'buffer'):
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
 from openai import OpenAI
 from dotenv import load_dotenv
 import tiktoken
+
+from llama_index.core import StorageContext, VectorStoreIndex, load_index_from_storage, Settings
+from llama_index.embeddings.openai import OpenAIEmbedding
 
 from chat.config import (
     find_latest_index,
@@ -35,39 +46,38 @@ from chat.config import (
 )
 
 # Path a la base de datos SQLite con el texto completo
-DB_PATH = PROJECT_ROOT / "data" / "raw" / "leyes-2023-2025_12_20.sqlite3"
+# DB_PATH = PROJECT_ROOT / "data" / "raw" / "leyes-2023-2025_12_20.sqlite3"
 
 load_dotenv()
 
 
-def get_full_text(doc_id: int) -> str:
-    """
-    Obtiene el texto completo de una ley desde SQLite.
-    
-    Args:
-        doc_id: ID del documento en la base de datos
-    
-    Returns:
-        Texto completo de la ley
-    """
-    if not DB_PATH.exists():
-        return ""
-    
-    conn = sqlite3.connect(str(DB_PATH))
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT texto_original FROM leyes WHERE id = ?",
-        (doc_id,)
-    )
-    result = cursor.fetchone()
-    conn.close()
-    
-    return result[0] if result else ""
+# def get_full_text(doc_id: int) -> str:
+#     """
+#     Obtiene el texto completo de una ley desde SQLite.
+#     
+#     Args:
+#         doc_id: ID del documento en la base de datos
+#     
+#     Returns:
+#         Texto completo de la ley
+#     """
+#     if not DB_PATH.exists():
+#         return ""
+#     
+#     conn = sqlite3.connect(str(DB_PATH))
+#     cursor = conn.cursor()
+#     cursor.execute(
+#         "SELECT texto_original FROM leyes WHERE id = ?",
+#         (doc_id,)
+#     )
+#     result = cursor.fetchone()
+#     conn.close()
+#     
+#     return result[0] if result else ""
 
 
 # === Cache global (singleton) ===
-_faiss_index: Optional[faiss.IndexFlatL2] = None
-_metadata: Optional[Dict] = None
+_llama_index: Optional[VectorStoreIndex] = None
 _openai_client: Optional[OpenAI] = None
 
 
@@ -85,32 +95,47 @@ def _get_openai_client() -> OpenAI:
     return _openai_client
 
 
-def load_index() -> Tuple[faiss.IndexFlatL2, Dict]:
+def load_index() -> VectorStoreIndex:
     """
-    Carga índice FAISS y metadata desde disco.
+    Carga índice LlamaIndex desde disco.
     
     Returns:
-        Tuple de (índice FAISS, diccionario de metadata)
+        VectorStoreIndex de LlamaIndex
     
     Raises:
         FileNotFoundError si no existe el índice
+        UnicodeDecodeError si hay problemas de codificación
     """
-    index_path, metadata_path = find_latest_index()
+    index_dir = find_latest_index()
     
-    if index_path is None or metadata_path is None:
+    if index_dir is None:
         raise FileNotFoundError(
-            "No se encontró ningún índice FAISS en data/indexed/. "
+            "No se encontró ningún índice LlamaIndex en data/indexed/. "
             "Ejecutá 'cd etl && python3 run_etl.py' primero."
         )
     
-    # Cargar índice FAISS
-    index = faiss.read_index(str(index_path))
+    try:
+        # Configurar embedding model (debe ser el mismo que se usó para crear el índice)
+        embed_model = OpenAIEmbedding(
+            model=EMBED_MODEL,
+            api_key=os.getenv("OPENAI_API_KEY")
+        )
+        Settings.embed_model = embed_model
+        
+        # Cargar índice desde storage
+        # Nota: El archivo default__vector_store.json contiene datos binarios de FAISS
+        # LlamaIndex debería manejarlo correctamente, pero parece que hay problemas de codificación
+        storage_context = StorageContext.from_defaults(persist_dir=str(index_dir))
+        index = load_index_from_storage(storage_context)
+        
+        return index
     
-    # Cargar metadata
-    with open(metadata_path, "r", encoding="utf-8") as f:
-        metadata = json.load(f)
-    
-    return index, metadata
+    except Exception as e:
+        # Capturar otros errores y dar contexto
+        raise RuntimeError(
+            f"Error al cargar índice desde {index_dir}: {str(e)}\n"
+            f"Tipo de error: {type(e).__name__}\n"
+        ) from e
 
 
 def initialize_rag() -> None:
@@ -118,17 +143,17 @@ def initialize_rag() -> None:
     Inicializa el RAG cargando el índice en memoria.
     Llamar una vez al inicio de la aplicación.
     """
-    global _faiss_index, _metadata
+    global _llama_index
     
-    if _faiss_index is not None:
+    if _llama_index is not None:
         return  # Ya inicializado
     
-    _faiss_index, _metadata = load_index()
+    _llama_index = load_index()
 
 
 def search(question: str, top_k: int = SIMILARITY_TOP_K) -> List[Dict[str, Any]]:
     """
-    Busca los chunks más similares a la pregunta.
+    Busca los chunks más similares a la pregunta usando LlamaIndex.
     
     Args:
         question: pregunta del usuario
@@ -137,45 +162,51 @@ def search(question: str, top_k: int = SIMILARITY_TOP_K) -> List[Dict[str, Any]]
     Returns:
         Lista de diccionarios con info de cada chunk encontrado
     """
-    global _faiss_index, _metadata
+    global _llama_index
     
-    if _faiss_index is None or _metadata is None:
+    if _llama_index is None:
         initialize_rag()
     
-    client = _get_openai_client()
+    # Usar retriever de LlamaIndex
+    retriever = _llama_index.as_retriever(similarity_top_k=top_k)
+    nodes_with_scores = retriever.retrieve(question)
     
-    # Generar embedding de la pregunta
-    response = client.embeddings.create(
-        input=[question],
-        model=EMBED_MODEL
-    )
-    query_embedding = np.array([response.data[0].embedding], dtype=np.float32)
-    
-    # Buscar en FAISS
-    distances, indices = _faiss_index.search(query_embedding, top_k)
-    
-    # Armar resultados
+    # Armar resultados en el formato esperado
     results = []
-    for i, (dist, idx) in enumerate(zip(distances[0], indices[0])):
-        if idx < 0:  # FAISS retorna -1 si no hay suficientes resultados
-            continue
+    for i, node_with_score in enumerate(nodes_with_scores):
+        node = node_with_score.node
+        score = node_with_score.score
         
-        doc_info = _metadata["documents"][idx]
-        doc_id = doc_info["doc_id"]
+        # Extraer metadata del node
+        metadata = node.metadata or {}
         
-        # Obtener texto completo desde SQLite (en lugar del preview truncado)
-        full_text = get_full_text(doc_id)
+        # Obtener doc_id (puede estar en metadata o en node.ref_doc_id)
+        doc_id = metadata.get("doc_id") or node.ref_doc_id
+        
+        # Los nodes de LlamaIndex ya tienen el texto del chunk, no deberíamos necesitar SQLite
+        text = node.text
+        
+        # Si en el futuro necesitamos el texto completo de la ley (no solo el chunk),
+        # podemos descomentar esto
+        # full_text = ""
+        # if doc_id:
+        #     try:
+        #         doc_id_int = int(doc_id) if isinstance(doc_id, str) else doc_id
+        #         full_text = get_full_text(doc_id_int)
+        #     except (ValueError, TypeError):
+        #         pass
+        # text = full_text if full_text else node.text
         
         results.append({
             "rank": i + 1,
-            "distance": float(dist),
+            "distance": float(score) if score is not None else None,
             "doc_id": doc_id,
-            "text": full_text if full_text else doc_info["text_preview"],
-            "tipo_norma": doc_info["metadata"].get("tipo_norma"),
-            "numero_norma": doc_info["metadata"].get("numero_norma"),
-            "titulo_resumido": doc_info["metadata"].get("titulo_resumido"),
-            "fecha_sancion": doc_info["metadata"].get("fecha_sancion"),
-            "year": doc_info["metadata"].get("year"),
+            "text": text,
+            "tipo_norma": metadata.get("tipo_norma"),
+            "numero_norma": metadata.get("numero_norma"),
+            "titulo_resumido": metadata.get("titulo_resumido"),
+            "fecha_sancion": metadata.get("fecha_sancion"),
+            "year": metadata.get("year"),
         })
     
     return results
@@ -533,7 +564,6 @@ def query(question: str, conversation_history: Optional[List[Dict[str, Any]]] = 
 
 def reset_rag() -> None:
     """Resetea el cache del RAG (útil para recargar)."""
-    global _faiss_index, _metadata, _openai_client
-    _faiss_index = None
-    _metadata = None
+    global _llama_index, _openai_client
+    _llama_index = None
     _openai_client = None
