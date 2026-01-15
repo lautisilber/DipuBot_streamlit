@@ -1,99 +1,89 @@
 """
-skills/base.py
-==============
-Clase base abstracta para todas las skills.
-
-Define la interfaz común que todas las skills deben implementar.
-Compatible con LlamaIndex para futura integración como tools/functions.
+chat/skills/base.py
+===================
+Base class for chatbot skills.
+Defines the interface that all skills must implement.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
-from pydantic import BaseModel
+from dataclasses import dataclass, field
+from typing import List, Dict, Any, Optional
 
 
-class SkillInput(BaseModel):
-    """
-    Clase base para inputs de skills.
+@dataclass
+class SkillResult:
+    """Standard result format from skill execution.
     
-    Todas las skills deben definir su propio schema de input
-    heredando de esta clase.
+    Attributes:
+        response: The generated response text
+        sources: List of sources used (format depends on skill)
+        metadata: Optional additional data from skill execution
     """
-    pass
-
-
-class SkillOutput(BaseModel):
-    """
-    Clase base para outputs de skills.
-    
-    Todas las skills deben definir su propio schema de output
-    heredando de esta clase.
-    """
-    success: bool
-    error: Optional[str] = None
+    response: str
+    sources: List[Dict[str, Any]] = field(default_factory=list)
+    metadata: Optional[Dict[str, Any]] = None
 
 
 class BaseSkill(ABC):
-    """
-    Clase base abstracta para todas las skills.
+    """Abstract base class for chatbot skills.
     
-    Las skills son herramientas especializadas que el chatbot puede usar
-    para realizar tareas específicas que van más allá del RAG tradicional.
+    All skills must implement:
+    - name: Unique identifier for the skill
+    - description: Description for the router to understand when to use this skill
+    - execute: Main logic to process a query and return a result
     
-    Cada skill debe:
-    1. Definir sus propios schemas de input/output usando Pydantic
-    2. Implementar el método execute()
-    3. Ser stateless (no mantener estado entre ejecuciones)
-    4. Ser thread-safe
-    
-    Ejemplo:
-        class MySkill(BaseSkill):
-            def execute(self, input_data: MySkillInput) -> MySkillOutput:
-                # Lógica de la skill
-                return MySkillOutput(success=True, data=result)
+    Optional:
+    - initialize: Setup code (load models, indices, etc.)
     """
     
     @property
     @abstractmethod
     def name(self) -> str:
-        """Nombre único de la skill."""
+        """Unique skill identifier.
+        
+        Returns:
+            String identifier (e.g., 'rag', 'sql_query')
+        """
         pass
     
     @property
     @abstractmethod
     def description(self) -> str:
-        """Descripción de qué hace la skill."""
+        """Description for the router to understand when to use this skill.
+        
+        This description is used by the LLM to decide which skill to invoke.
+        Be specific about what types of queries this skill handles.
+        
+        Returns:
+            Description string
+        """
         pass
     
     @abstractmethod
-    def execute(self, input_data: SkillInput) -> SkillOutput:
-        """
-        Ejecuta la skill con los datos de entrada proporcionados.
+    def execute(
+        self, 
+        query: str, 
+        conversation_history: Optional[List[Dict[str, Any]]] = None
+    ) -> SkillResult:
+        """Execute the skill on a query.
         
         Args:
-            input_data: Datos de entrada validados por Pydantic
+            query: The user's question or request
+            conversation_history: Optional list of previous messages
+                Format: [{"role": "user"/"assistant", "content": "..."}]
         
         Returns:
-            Resultado de la ejecución con success=True/False
-        
-        Raises:
-            No debe lanzar excepciones, debe capturarlas y retornar
-            SkillOutput con success=False y error descriptivo.
+            SkillResult with response, sources, and optional metadata
         """
         pass
     
-    def to_llamaindex_tool(self) -> Dict[str, Any]:
-        """
-        Convierte la skill a un formato compatible con LlamaIndex tools.
+    def initialize(self) -> None:
+        """Optional initialization hook.
         
-        Este método será útil cuando se integre con LlamaIndex.
-        Por ahora retorna un diccionario con metadata básica.
-        
-        Returns:
-            Diccionario con metadata de la tool
+        Override this method to load models, indices, or other resources.
+        Called once when the skill is registered with the Chat router.
         """
-        return {
-            "name": self.name,
-            "description": self.description,
-            "execute": self.execute,
-        }
+        pass
+    
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__}(name='{self.name}')>"
