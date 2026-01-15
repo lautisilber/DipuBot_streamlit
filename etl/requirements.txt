@@ -1,6 +1,12 @@
-# ETL Dependencies
+# ETL Dependencies - LlamaIndex
 python-dotenv>=1.0.0
 openai>=1.0.0
-faiss-cpu>=1.7.4
-numpy>=1.24.0
 tqdm>=4.65.0
+
+# LlamaIndex core and integrations
+llama-index>=0.12.0
+llama-index-embeddings-openai>=0.3.0
+llama-index-vector-stores-faiss>=0.3.0
+
+# Vector store
+faiss-cpu>=1.7.4

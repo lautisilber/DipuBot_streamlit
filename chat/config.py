@@ -2,7 +2,7 @@
 chat/config.py
 ==============
 Configuración centralizada para el módulo de chat/RAG.
-Define paths al índice FAISS y parámetros del modelo.
+Define paths al índice LlamaIndex y parámetros del modelo.
 """
 
 import os
@@ -85,33 +85,36 @@ def get_model_limits(model_name: Optional[str] = None) -> Dict[str, int]:
     return MODEL_LIMITS.get(model_name, MODEL_LIMITS["gpt-5.2"])
 
 
-def find_latest_index() -> Tuple[Optional[Path], Optional[Path]]:
+def find_latest_index() -> Optional[Path]:
     """
-    Encuentra el índice FAISS más reciente en data/indexed/.
+    Encuentra el directorio del índice LlamaIndex más reciente en data/indexed/.
     
     Returns:
-        Tuple de (index_path, metadata_path) o (None, None) si no existe
+        Path al directorio del índice (ej: llama_index_20260112_203029) o None si no existe
     """
     if not INDEXED_DIR.exists():
-        return None, None
+        return None
     
-    # Buscar archivos .faiss ordenados por nombre (tienen timestamp)
-    faiss_files = sorted(INDEXED_DIR.glob("*.faiss"), reverse=True)
+    # Buscar directorios llama_index_* ordenados por nombre (tienen timestamp)
+    llama_index_dirs = sorted(
+        [d for d in INDEXED_DIR.iterdir() if d.is_dir() and d.name.startswith("llama_index_")],
+        reverse=True
+    )
     
-    if not faiss_files:
-        return None, None
+    if not llama_index_dirs:
+        return None
     
-    latest_index = faiss_files[0]
-    # El metadata tiene el mismo timestamp pero con _metadata_ en lugar de _index_
-    latest_metadata = INDEXED_DIR / latest_index.name.replace("_index_", "_metadata_").replace(".faiss", ".json")
+    latest_dir = llama_index_dirs[0]
     
-    if not latest_metadata.exists():
-        return None, None
+    # Verificar que el directorio tenga los archivos necesarios
+    required_files = ["default__vector_store.json", "docstore.json", "index_store.json"]
+    if not all((latest_dir / f).exists() for f in required_files):
+        return None
     
-    return latest_index, latest_metadata
+    return latest_dir
 
 
 def validate_index_exists() -> bool:
-    """Verifica que exista al menos un índice FAISS."""
-    index_path, metadata_path = find_latest_index()
-    return index_path is not None and metadata_path is not None
+    """Verifica que exista al menos un índice LlamaIndex."""
+    index_dir = find_latest_index()
+    return index_dir is not None
