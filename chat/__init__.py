@@ -10,7 +10,7 @@ from chat.skills.base import BaseSkill, SkillResult
 from chat.skills.rag_skill import RAGSkill
 
 # Backward compatibility: expose rag functions at module level
-from chat.rag import initialize_rag, query as rag_query, reset_rag
+from chat.skills.rag_skill import initialize_rag, query as rag_query, reset_rag
 
 __all__ = [
     # New API

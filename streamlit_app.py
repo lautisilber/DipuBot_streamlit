@@ -9,7 +9,7 @@ import os
 import streamlit as st
 from dotenv import load_dotenv
 
-from chat.rag import initialize_rag, query
+from chat.skills.rag_skill import initialize_rag, query
 from chat.config import validate_index_exists
 
 load_dotenv()
