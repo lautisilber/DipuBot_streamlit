@@ -16,6 +16,7 @@ load_dotenv()
 # Directorio raíz del proyecto (relativo a este archivo)
 PROJECT_ROOT = Path(__file__).parent.parent
 INDEXED_DIR = PROJECT_ROOT / "data" / "indexed"
+DB_PATH = PROJECT_ROOT / "data" / "raw" / "leyes-2023-2025_12_20.sqlite3"
 
 # === Modelos ===
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-5.2")

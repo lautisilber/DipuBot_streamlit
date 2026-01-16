@@ -98,6 +98,10 @@ class Chat:
 Habilidades disponibles:
 {skill_info}
 
+REGLAS DE DECISIÓN:
+- sql_query: Usar cuando el usuario menciona un NÚMERO DE LEY específico (ej: "ley 27771", "ley 27.771", "decreto 123"), o pide datos estructurados (contar, listar, filtrar por fecha/año).
+- rag: Usar para preguntas conceptuales, interpretaciones, o búsquedas por tema sin número específico.
+
 Respondé ÚNICAMENTE con el nombre de la habilidad más apropiada.
 No agregues explicaciones ni texto adicional, solo el nombre exacto de la habilidad."""
 
@@ -167,8 +171,16 @@ No agregues explicaciones ni texto adicional, solo el nombre exacto de la habili
         skill_name = self._determine_skill(question, conversation_history)
         skill = self.skills[skill_name]
         
+        # Log skill selection
+        print(f"\n🎯 SKILL SELECTED: {skill_name}")
+        
         # Execute the skill
         result = skill.execute(question, conversation_history)
+        
+        # Log result preview
+        preview = result.response[:150] + "..." if len(result.response) > 150 else result.response
+        print(f"📄 RESPONSE PREVIEW: {preview}")
+        print(f"📊 SOURCES: {len(result.sources)} items\n")
         
         return result.response, result.sources
     
@@ -190,9 +202,11 @@ def get_chat() -> Chat:
     global _chat_instance
     if _chat_instance is None:
         from chat.skills.rag_skill import RAGSkill
+        from chat.skills.sql_skill import SQLSkill
         
         _chat_instance = Chat()
         _chat_instance.register_skill(RAGSkill(), default=True)
+        _chat_instance.register_skill(SQLSkill())
     return _chat_instance
 
 
