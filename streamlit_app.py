@@ -9,7 +9,7 @@ import os
 import streamlit as st
 from dotenv import load_dotenv
 
-from chat.skills.rag_skill import initialize_rag, query
+from chat.chat import initialize_chat, query
 from chat.config import validate_index_exists
 
 load_dotenv()
@@ -125,11 +125,11 @@ def main():
         st.warning("⚠️ Configurá tu API key de OpenAI en el sidebar para continuar.")
         st.stop()
     
-    # Inicializar RAG (solo una vez)
+    # Inicializar Chat (solo una vez)
     if not st.session_state.rag_initialized:
         with st.spinner("Cargando índice de leyes..."):
             try:
-                initialize_rag()
+                initialize_chat()
                 st.session_state.rag_initialized = True
             except Exception as e:
                 st.error(f"Error al inicializar: {e}")
