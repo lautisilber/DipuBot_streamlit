@@ -84,6 +84,6 @@ Thumbs.db
 # =========================
 # SQLite / local data
 # =========================
-*.sqlite
-*.sqlite3
+#*.sqlite
+#*.sqlite3
 *.db
