@@ -25,6 +25,16 @@ EMBED_MODEL = os.getenv("EMBED_MODEL", "text-embedding-3-small")
 # === RAG Settings ===
 SIMILARITY_TOP_K = int(os.getenv("SIMILARITY_TOP_K", "5"))
 
+# === RAG Iterative Search Settings ===
+RAG_MIN_CHUNKS = int(os.getenv("RAG_MIN_CHUNKS", "3"))
+RAG_MIN_SIMILARITY_SCORE = float(os.getenv("RAG_MIN_SIMILARITY_SCORE", "0.7"))
+RAG_WIDER_SEARCH_MULTIPLIER = int(os.getenv("RAG_WIDER_SEARCH_MULTIPLIER", "2"))
+RAG_ENABLE_LLM_CHECK = os.getenv("RAG_ENABLE_LLM_CHECK", "true").lower() == "true"
+
+# === RAG Query Rewriting Settings ===
+RAG_ENABLE_QUERY_REWRITING = os.getenv("RAG_ENABLE_QUERY_REWRITING", "true").lower() == "true"
+RAG_REWRITING_MIN_QUERY_LENGTH = int(os.getenv("RAG_REWRITING_MIN_QUERY_LENGTH", "20"))
+
 # === Model Token Limits ===
 # Límites por modelo (context window, TPM, tokens reservados)
 # Estos valores se usan para calcular cuánto historial puede incluirse
