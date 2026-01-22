@@ -65,7 +65,7 @@ def render_sidebar():
     with st.sidebar:
         # Configuración de API key (solo si no está en .env)
         if not os.environ.get("OPENAI_API_KEY"):
-            st.header("🔑 Configuración")
+            st.header("Configuración")
             api_key = st.text_input(
                 "OpenAI API Key",
                 type="password",
@@ -78,7 +78,7 @@ def render_sidebar():
                 os.environ["OPENAI_API_KEY"] = api_key
             st.divider()
         
-        st.header("ℹ️ Información")
+        st.header("Información")
         st.markdown("""
         Este chatbot responde preguntas sobre **legislación argentina** 
         usando inteligencia artificial.
@@ -94,7 +94,7 @@ def render_sidebar():
         - ¿Qué dice la ley sobre cardiopatías congénitas?
         """)
         
-        if st.button("🗑️ Limpiar conversación"):
+        if st.button("Limpiar conversación"):
             st.session_state.messages = []
             st.rerun()
 
@@ -130,8 +130,16 @@ def add_css():
     color: #FFF !important;
 }}
 
-{chat_input_bg}, {top_bg} {{
+{top_bg} {{
     background-color: rgba(255, 255, 255, 0.7) !important;
+}}
+
+{sidebar} {{
+    background-color: white !important;
+}}
+
+div[data-testid="stBottom"] > div {{
+    background-color: transparent !important;
 }}
 
 {subtitle} {{
