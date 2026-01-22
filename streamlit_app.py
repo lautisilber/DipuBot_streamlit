@@ -5,12 +5,14 @@ UI Streamlit para chat con documentos legales argentinos.
 Conecta con el módulo RAG que usa FAISS + OpenAI.
 """
 
+import base64
 import os
 import streamlit as st
 from dotenv import load_dotenv
 
 from chat.chat import initialize_chat, query
 from chat.config import validate_index_exists
+from pathlib import Path
 
 load_dotenv()
 
@@ -96,15 +98,60 @@ def render_sidebar():
             st.session_state.messages = []
             st.rerun()
 
+def add_css():
+    main_div = "section.stMain"
+    chat_bubble_user = "div.stLayoutWrapper div.stChatMessage.st-emotion-cache-1iitq1e"
+    chat_bubble_bot = "div.stLayoutWrapper div.stChatMessage.st-emotion-cache-1fee4w7"
+    sidebar = 'div[data-testid="stSidebarContent"]'
+    top_bg = 'div[data-testid="stMainBlockContainer"]'
+    main_title = "h1#dipu-bot"
+    subtitle = 'div[data-testid="stCaptionContainer"]'
+    chat_input_bg = 'div[data-testid="stBottom"]'
+    chat_input = "div.stChatInput"
+    toolbar = "div.stAppToolbar"
+
+    bg_svg = Path("assets/svg/fondo-06.svg").read_text()
+    bg_svg_encoded = base64.b64encode(bg_svg.encode()).decode()
+
+    st.markdown(
+        f"""
+<style>
+{toolbar} {{
+    background-color: #6076B9 !important;
+    color: #FFF !important;
+}}
+
+{chat_input_bg}, {top_bg} {{
+    background-color: rgba(255, 255, 255, 0.7) !important;
+}}
+
+{main_title}, {subtitle} {{
+    color: #6076B9 !important;
+    text-shadow: 0 0 15px white !important;
+}}
+
+{main_div} {{
+    background-image: url("data:image/svg+xml;base64,{bg_svg_encoded}") !important;
+    background-size: cover !important;
+    background-repeat: no-repeat !important;
+    background-attachment: fixed !important;
+}}
+</style>
+""",
+        unsafe_allow_html=True
+    )
+
 
 def main():
     st.set_page_config(
-        page_title="Legal RAG Argentina",
+        page_title="DipuBot",
         page_icon="⚖️",
         layout="centered"
     )
     
-    st.title("⚖️ Legal RAG Argentina")
+    add_css()
+
+    st.title("DipuBot")
     st.caption("Consultá sobre legislación argentina")
     
     init_session_state()
@@ -139,7 +186,7 @@ def main():
     display_chat_history()
     
     # Input del usuario
-    if prompt := st.chat_input("Hacé tu consulta legal..."):
+    if prompt := st.chat_input("Hacé tu pregunta..."):
         # Agregar mensaje del usuario
         st.session_state.messages.append({
             "role": "user",
