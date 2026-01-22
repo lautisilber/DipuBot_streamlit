@@ -98,6 +98,12 @@ def render_sidebar():
             st.session_state.messages = []
             st.rerun()
 
+def get_encoded_svg(filename: str) -> str:
+    svg = Path(filename).read_text()
+    svg_encoded = base64.b64encode(svg.encode()).decode()
+    return svg_encoded
+
+
 def add_css():
     main_div = "section.stMain"
     chat_bubble_user = "div.stLayoutWrapper div.stChatMessage.st-emotion-cache-1iitq1e"
@@ -109,9 +115,12 @@ def add_css():
     chat_input_bg = 'div[data-testid="stBottom"]'
     chat_input = "div.stChatInput"
     toolbar = "div.stAppToolbar"
+    avatar_bot = 'div[data-testid="stChatMessageAvatarAssistant"]'
+    avatar_bot_inside = f"{avatar_bot} span span"
 
-    bg_svg = Path("assets/svg/fondo-06.svg").read_text()
-    bg_svg_encoded = base64.b64encode(bg_svg.encode()).decode()
+    bg_svg_encoded = get_encoded_svg("assets/svg/fondo-06.svg")
+    avatar_assistant_svg_encoded = get_encoded_svg("assets/svg/quirqui-02.svg")
+    title_svg_encoded = get_encoded_svg("assets/svg/titulo-01.svg")
 
     st.markdown(
         f"""
@@ -125,9 +134,43 @@ def add_css():
     background-color: rgba(255, 255, 255, 0.7) !important;
 }}
 
-{main_title}, {subtitle} {{
+{subtitle} {{
     color: #6076B9 !important;
     text-shadow: 0 0 15px white !important;
+}}
+
+{main_title} {{
+    background-image: url("data:image/svg+xml;base64,{title_svg_encoded}");
+    background-size: contain;
+    background-repeat: no-repeat;
+    width: 35rem;
+    height: 4rem;
+    margin-right: 10px;
+    flex-shrink: 0;
+
+    /* Hide the text. */
+    text-indent: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+}}
+
+{avatar_bot} {{
+    background-color: #3853A4 !important;
+}}
+
+{avatar_bot_inside} {{
+    background-image: url("data:image/svg+xml;base64,{avatar_assistant_svg_encoded}");
+    background-size: contain;
+    background-repeat: no-repeat;
+    width: 21px;
+    height: 21px;
+    margin-right: 10px;
+    flex-shrink: 0;
+
+    /* Hide the text. */
+    text-indent: 100%;
+    white-space: nowrap;
+    overflow: hidden;
 }}
 
 {main_div} {{
