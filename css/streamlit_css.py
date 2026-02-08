@@ -3,13 +3,17 @@ import streamlit as st
 from pathlib import Path
 import base64
 
-
-def _get_encoded_svg(filename: str) -> str:
+def get_encoded_svg(filename: str) -> str:
     svg = Path(filename).read_text()
     svg_encoded = base64.b64encode(svg.encode()).decode()
     return svg_encoded
 
-def add_css():
+def get_encoded_png(filename: str) -> str:
+    png = Path(filename).read_bytes()
+    png_encoded = base64.b64encode(png).decode()
+    return png_encoded
+
+def add_css(main: bool=False):
     main_div = "section.stMain"
     chat_bubble_inner = 'div[data-testid="stChatMessage"]'
     chat_bubble = f'div[data-testid="stLayoutWrapper"]:has(> {chat_bubble_inner})'
@@ -29,9 +33,7 @@ def add_css():
     sidebar_logo = 'img[data-testid="stSidebarLogo"]'
     header_logo = 'img[data-testid="stHeaderLogo"]'
 
-    bg_svg_encoded = _get_encoded_svg("assets/svg/fondo-06.svg")
-    avatar_assistant_svg_encoded = _get_encoded_svg("assets/svg/quirqui-02.svg")
-    title_svg_encoded = _get_encoded_svg("assets/svg/titulo-01.svg")
+    bg_svg_encoded = get_encoded_svg("assets/svg/fondo-06.svg")
 
     st.markdown(
 f"""
@@ -61,7 +63,6 @@ body,
 }}
 
 {main_title} {{
-    background-image: url("data:image/svg+xml;base64,{title_svg_encoded}");
     background-size: contain;
     background-repeat: no-repeat;
     width: 35rem;
@@ -77,21 +78,6 @@ body,
 
 {avatar_bot} {{
     background-color: #3853A4 !important;
-}}
-
-{avatar_bot_inside} {{
-    background-image: url("data:image/svg+xml;base64,{avatar_assistant_svg_encoded}");
-    background-size: contain;
-    background-repeat: no-repeat;
-    width: 21px;
-    height: 21px;
-    margin-right: 10px;
-    flex-shrink: 0;
-
-    /* Hide the text. */
-    text-indent: 100%;
-    white-space: nowrap;
-    overflow: hidden;
 }}
 
 {main_div} {{
@@ -135,3 +121,31 @@ div:has(> {header_logo}) {{
 """,
         unsafe_allow_html=True
     )
+
+    if main:
+        avatar_assistant_svg_encoded = get_encoded_svg("assets/svg/quirqui-02.svg")
+        title_svg_encoded = get_encoded_svg("assets/svg/titulo-01.svg")
+        st.markdown(f"""
+<style>
+{main_title} {{
+    background-image: url("data:image/svg+xml;base64,{title_svg_encoded}");
+}}
+
+{avatar_bot_inside} {{
+    background-image: url("data:image/svg+xml;base64,{avatar_assistant_svg_encoded}");
+    background-size: contain;
+    background-repeat: no-repeat;
+    width: 21px;
+    height: 21px;
+    margin-right: 10px;
+    flex-shrink: 0;
+
+    /* Hide the text. */
+    text-indent: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+}}
+</style>
+""",
+            unsafe_allow_html=True
+        )
