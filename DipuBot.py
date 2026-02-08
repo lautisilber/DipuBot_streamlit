@@ -76,7 +76,7 @@ def render_sidebar():
     with st.sidebar:
         # Configuración de API key (solo si no está en .env)
         if not os.environ.get("OPENAI_API_KEY"):
-            st.header("🔑 Configuración")
+            st.header("Configuración")
             api_key = st.text_input(
                 "OpenAI API Key",
                 type="password",
@@ -102,8 +102,8 @@ def render_sidebar():
         - ¿Qué dice la ley sobre cardiopatías congénitas?
         - ¿Cuál fue la última ley presentada y aprobada por María Teresa Margarita Gonzalez y qué dice la ley?
         """)
-
-        if st.button("🗑️ Limpiar conversación"):
+        
+        if st.button("Limpiar conversación"):
             st.session_state.messages = []
             st.rerun()
 
