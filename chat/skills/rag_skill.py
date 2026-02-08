@@ -164,6 +164,7 @@ def search(question: str, top_k: int = SIMILARITY_TOP_K) -> List[Dict[str, Any]]
             "tipo_norma": metadata.get("tipo_norma"),
             "numero_norma": metadata.get("numero_norma"),
             "titulo_resumido": metadata.get("titulo_resumido"),
+            "titulo_sumario": metadata.get("titulo_sumario"),
             "fecha_sancion": metadata.get("fecha_sancion"),
             "year": metadata.get("year"),
             "chunk_index": metadata.get("chunk_index"),
@@ -287,43 +288,43 @@ def needs_query_rewriting(query: str, conversation_history: Optional[List[Dict[s
     Args:
         query: Query del usuario
         conversation_history: Historial conversacional (opcional)
-    
+
     Returns:
         Tuple de (needs_rewriting: bool, reason: str)
     """
     if not conversation_history or not RAG_ENABLE_QUERY_REWRITING:
         return False, "no_history_or_disabled"
-    
+
     query_lower = query.lower().strip()
-    
+
     referential_patterns = [
         r'\b(ella|él|eso|esta|ese|esa|aquella|aquel)\b',
         r'\b(la|el|las|los)\s+(ley|norma|decreto|resolución|anterior|mencionada|citada)\b',
         r'\b(punto|artículo|sección|capítulo)\s+[a-z]\b',
         r'\b(ambas|otra|otras|mencionadas|anteriores)\b',
     ]
-    
+
     for pattern in referential_patterns:
         if re.search(pattern, query_lower):
             return True, "referential_pronoun"
-    
+
     vague_patterns = [
         r'\b(más\s+detalles?|dime\s+más|qué\s+más|información\s+adicional|más\s+información)\b',
         r'\b(sobre\s+ello|sobre\s+eso|acerca\s+de\s+ello)\b',
     ]
-    
+
     for pattern in vague_patterns:
         if re.search(pattern, query_lower):
             return True, "vague_query"
-    
+
     if len(query) < RAG_REWRITING_MIN_QUERY_LENGTH:
         return True, "short_query"
-    
+
     referential_words = ["mencionada", "anterior", "citada", "referida", "esa", "este", "aquella"]
     for word in referential_words:
         if word in query_lower:
             return True, "referential_word"
-    
+
     return False, "no_rewriting_needed"
 
 
@@ -341,19 +342,19 @@ def _clean_llm_response(text: str) -> str:
 def rewrite_query_with_history(query: str, conversation_history: List[Dict[str, Any]]) -> str:
     """
     Reescribe la query incorporando información del historial conversacional.
-    
+
     Args:
         query: Query original del usuario
         conversation_history: Historial conversacional
-    
+
     Returns:
         Query reescrita con contexto del historial
     """
     if not conversation_history or len(conversation_history) == 0:
         return query
-    
+
     client = _get_openai_client()
-    
+
     history_text = ""
     valid_messages = 0
     for msg in conversation_history[-6:]:
@@ -363,10 +364,10 @@ def rewrite_query_with_history(query: str, conversation_history: List[Dict[str, 
             role_name = "Usuario" if role == "user" else "Asistente"
             history_text += f"{role_name}: {content[:300]}\n"
             valid_messages += 1
-    
+
     if valid_messages == 0:
         return query
-    
+
     prompt = f"""Reescribe esta consulta incorporando información relevante del historial conversacional para que sea más específica y útil para buscar en una base de datos de leyes argentinas.
 
 Consulta original: {query}
@@ -398,10 +399,10 @@ IMPORTANTE:
             temperature=0.3,
             max_completion_tokens=150,
         )
-        
+
         rewritten = _clean_llm_response(response.choices[0].message.content)
         return rewritten if rewritten else query
-        
+
     except Exception as e:
         print(f"RAG: Error al reescribir query: {e}")
         return query
@@ -410,29 +411,29 @@ IMPORTANTE:
 def evaluate_retrieval_quality(chunks: List[Dict[str, Any]]) -> Tuple[bool, str]:
     """
     Evalúa la calidad de la recuperación inicial sin usar LLM.
-    
+
     Args:
         chunks: Lista de chunks encontrados con sus scores
-    
+
     Returns:
         Tuple de (needs_more_context: bool, strategy: str)
         Estrategias: "wider", "expand", "both", "none"
     """
     if not chunks:
         return True, "wider"
-    
+
     scores = [c.get("distance") for c in chunks if c.get("distance") is not None]
     if not scores:
         return True, "wider"
-    
+
     avg_score = sum(scores) / len(scores)
     num_chunks = len(chunks)
-    
+
     has_few_chunks = num_chunks < RAG_MIN_CHUNKS
     has_low_scores = avg_score < RAG_MIN_SIMILARITY_SCORE
     score_threshold_margin = RAG_MIN_SIMILARITY_SCORE + 0.1
     has_medium_scores = RAG_MIN_SIMILARITY_SCORE <= avg_score < score_threshold_margin
-    
+
     if has_few_chunks and has_low_scores:
         return True, "both"
     elif has_few_chunks:
@@ -448,20 +449,20 @@ def evaluate_retrieval_quality(chunks: List[Dict[str, Any]]) -> Tuple[bool, str]
 def evaluate_context_sufficiency(question: str, chunks: List[Dict[str, Any]]) -> bool:
     """
     Usa el LLM para evaluar si el contexto es suficiente para responder.
-    
+
     Args:
         question: Pregunta del usuario
         chunks: Chunks encontrados
-    
+
     Returns:
         True si el contexto es suficiente, False si necesita más
     """
     client = _get_openai_client()
-    
+
     # Preparar contexto de chunks con información de metadata
     context_parts = []
     leyes_en_contexto = set()
-    
+
     for c in chunks[:5]:
         text = c.get("text", "")[:500]
         tipo = c.get("tipo_norma", "")
@@ -472,10 +473,10 @@ def evaluate_context_sufficiency(question: str, chunks: List[Dict[str, Any]]) ->
             context_parts.append(f"[{ley_info}]\n{text}")
         else:
             context_parts.append(text)
-    
+
     context_text = "\n\n---\n\n".join(context_parts)
     leyes_str = ", ".join(sorted(leyes_en_contexto)) if leyes_en_contexto else "ninguna identificada"
-    
+
     prompt = f"""Analizá si podés responder esta pregunta ESPECÍFICA con el contexto proporcionado.
 
 Pregunta: {question}
@@ -503,10 +504,10 @@ Responde SOLO "suficiente" o "insuficiente", sin explicaciones adicionales."""
             temperature=0,
             max_completion_tokens=10,
         )
-        
+
         answer = response.choices[0].message.content.strip().lower()
         return "suficiente" in answer
-        
+
     except Exception:
         # En caso de error, asumir que no es suficiente para ser conservador
         return False
@@ -515,15 +516,15 @@ Responde SOLO "suficiente" o "insuficiente", sin explicaciones adicionales."""
 def expand_query(query: str) -> str:
     """
     Expande la query usando el LLM para buscar información relacionada.
-    
+
     Args:
         query: Query original del usuario
-    
+
     Returns:
         Query expandida
     """
     client = _get_openai_client()
-    
+
     prompt = f"""Expande esta consulta para buscar información relacionada que pueda ser relevante.
 
 Consulta original: {query}
@@ -545,10 +546,10 @@ Responde SOLO con la query expandida, sin explicaciones ni texto adicional."""
             temperature=0.3,
             max_completion_tokens=100,
         )
-        
+
         expanded = _clean_llm_response(response.choices[0].message.content)
         return expanded if expanded else query
-        
+
     except Exception as e:
         print(f"RAG: Error al expandir query: {e}")
         return query
@@ -557,11 +558,11 @@ Responde SOLO con la query expandida, sin explicaciones ni texto adicional."""
 def combine_chunks(initial: List[Dict[str, Any]], additional: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], int, int]:
     """
     Combina chunks iniciales y adicionales, eliminando duplicados.
-    
+
     Args:
         initial: Chunks de la búsqueda inicial
         additional: Chunks de búsquedas adicionales
-    
+
     Returns:
         Tuple de (lista combinada sin duplicados, cantidad agregados, cantidad duplicados)
     """
@@ -570,12 +571,12 @@ def combine_chunks(initial: List[Dict[str, Any]], additional: List[Dict[str, Any
     # Si no hay chunk_index, usamos hash del texto como fallback
     seen_ids = set()
     combined = []
-    
+
     def get_chunk_id(chunk: Dict[str, Any]) -> str:
         """Genera un ID único para el chunk."""
         doc_id = chunk.get("doc_id")
         chunk_index = chunk.get("chunk_index")
-        
+
         if doc_id and chunk_index is not None:
             # ID único: doc_id + chunk_index
             return f"{doc_id}_{chunk_index}"
@@ -588,14 +589,14 @@ def combine_chunks(initial: List[Dict[str, Any]], additional: List[Dict[str, Any
             # Último fallback: hash completo del texto
             text = chunk.get("text", "")
             return hashlib.md5(text.encode()).hexdigest()
-    
+
     # Primero agregar chunks iniciales (ya están ordenados por relevancia)
     for chunk in initial:
         chunk_id = get_chunk_id(chunk)
         if chunk_id not in seen_ids:
             combined.append(chunk)
             seen_ids.add(chunk_id)
-    
+
     # Luego agregar chunks adicionales que no estén duplicados
     added_count = 0
     duplicate_count = 0
@@ -607,11 +608,11 @@ def combine_chunks(initial: List[Dict[str, Any]], additional: List[Dict[str, Any
             added_count += 1
         else:
             duplicate_count += 1
-    
+
     # Reordenar por score (distance) - menor es mejor si es distancia, mayor si es similitud
     # Asumimos que es similitud (mayor es mejor) y ordenamos descendente
     combined.sort(key=lambda x: x.get("distance", 0) or 0, reverse=True)
-    
+
     return combined, added_count, duplicate_count
 
 
@@ -620,23 +621,23 @@ def generate_response(question: str, context_chunks: List[Dict], conversation_hi
     Genera una respuesta usando GPT con el contexto de los chunks y el historial conversacional.
     """
     client = _get_openai_client()
-    
+
     model_limits = get_model_limits(LLM_MODEL)
     context_window = model_limits["context_window"]
     reserved_tokens = model_limits["reserved_tokens"]
-    
+
     context_parts = []
     for chunk in context_chunks:
         source_info = f"{chunk['tipo_norma']} {chunk['numero_norma']}"
         if chunk.get('titulo_resumido'):
             source_info += f" - {chunk['titulo_resumido']}"
         context_parts.append(f"[{source_info}]\n{chunk['text']}")
-    
+
     context = "\n\n---\n\n".join(context_parts)
-    
+
     chunks_tokens = estimate_chunks_tokens(context_chunks)
-    
-    system_prompt = """Sos un asistente legal especializado en legislación argentina. 
+
+    system_prompt = """Sos un asistente legal especializado en legislación argentina.
 Tenés acceso a dos fuentes de información para responder:
 
 1. CONTEXTO ACTUAL: Fragmentos de texto legal que te proporciono ahora (leyes encontradas para esta pregunta)
@@ -669,9 +670,9 @@ Instrucciones generales:
 - Si el usuario pregunta por las leyes de la conversación actual, fijate que haya un mensaje del historial donde el usuario o tú la mencionaron
 - No inventes información legal que no esté en el contexto actual, es deccir, los fragmentos de texto legal proporcionados
 - Usá un tono profesional pero accesible"""
-    
+
     system_prompt_tokens = count_tokens(system_prompt, LLM_MODEL)
-    
+
     user_prompt_template = """CONTEXTO LEGAL ACTUAL (leyes encontradas para esta pregunta):
 {context}
 
@@ -683,12 +684,12 @@ Analizá la pregunta y decidí:
 1. ¿Es una pregunta nueva o de seguimiento?
 2. ¿Qué información necesitás del contexto actual vs del historial?
 Al usuario solo le interesa que le respondas usando la información más relevante. No le digas al usuario si la pregunta es nueva o de seguimiento, solo responde."""
-    
+
     user_prompt_base = user_prompt_template.format(context="", question=question)
     user_prompt_base_tokens = count_tokens(user_prompt_base, LLM_MODEL)
-    
+
     response_tokens_estimate = 1000
-    
+
     margin = 1000
     available_for_history = (
         context_window
@@ -699,11 +700,11 @@ Al usuario solo le interesa que le respondas usando la información más relevan
         - response_tokens_estimate
         - margin
     )
-    
+
     max_history_tokens = max(available_for_history, 500) if available_for_history > 0 else 0
-    
+
     messages = [{"role": "system", "content": system_prompt}]
-    
+
     has_history = False
     if conversation_history:
         if max_history_tokens > 0:
@@ -714,17 +715,17 @@ Al usuario solo le interesa que le respondas usando la información más relevan
             )
         else:
             truncated_history = truncate_history(conversation_history, max_messages=MAX_HISTORY_MESSAGES)
-        
+
         if truncated_history:
             formatted_history = format_conversation_history(truncated_history)
             messages.extend(formatted_history)
             has_history = True
-    
+
     if has_history:
         history_note = "\n\nNOTA: Hay un historial conversacional disponible arriba. Usalo para entender referencias a leyes mencionadas previamente."
     else:
         history_note = ""
-    
+
     user_prompt = user_prompt_template.format(context=context, question=question) + history_note
     messages.append({"role": "user", "content": user_prompt})
 
@@ -733,18 +734,18 @@ Al usuario solo le interesa que le respondas usando la información más relevan
         messages=messages,
         temperature=0.3,
     )
-    
+
     return response.choices[0].message.content
 
 
 def query(question: str, conversation_history: Optional[List[Dict[str, Any]]] = None) -> Tuple[str, List[Dict]]:
     """
     Ejecuta el flujo completo de RAG con búsqueda iterativa adaptativa.
-    
+
     Args:
         question: pregunta del usuario
         conversation_history: historial de mensajes previos (opcional)
-    
+
     Returns:
         Tuple de (respuesta generada, lista de fuentes usadas)
     """
@@ -757,45 +758,45 @@ def query(question: str, conversation_history: Optional[List[Dict[str, Any]]] = 
             if rewritten_query != question:
                 search_query = rewritten_query
                 print(f"RAG: Query reescrita: {rewritten_query[:100]}...")
-    
+
     chunks = search(search_query)
     initial_chunk_count = len(chunks)
-    
+
     if not chunks:
         return "No encontré información relevante para tu consulta.", []
-    
+
     needs_more, strategy = evaluate_retrieval_quality(chunks)
-    
+
     if needs_more:
         avg_score = sum(c.get('distance', 0) or 0 for c in chunks) / len(chunks)
         print(f"RAG: Necesita mas contexto (estrategia: {strategy}, chunks: {initial_chunk_count}, score: {avg_score:.3f})")
     elif RAG_ENABLE_LLM_CHECK:
         print(f"RAG: Verificando suficiencia con LLM...")
-    
+
     if not needs_more and RAG_ENABLE_LLM_CHECK:
         is_sufficient = evaluate_context_sufficiency(question, chunks)
         if not is_sufficient:
             needs_more = True
             strategy = "expand"
             print(f"RAG: Contexto insuficiente, activando expansion de query")
-    
+
     if needs_more:
         additional_chunks = []
-        
+
         if strategy in ["wider", "both"]:
             wider_top_k = SIMILARITY_TOP_K * RAG_WIDER_SEARCH_MULTIPLIER
             print(f"RAG: Busqueda amplia (top_k={wider_top_k})")
             wider_chunks = search(search_query, top_k=wider_top_k)
             additional_chunks.extend(wider_chunks)
             print(f"RAG: Encontrados {len(wider_chunks)} chunks adicionales (busqueda amplia)")
-        
+
         if strategy in ["expand", "both"]:
             print(f"RAG: Expandiendo query...")
             expanded_query = expand_query(search_query)
             expanded_chunks = search(expanded_query, top_k=SIMILARITY_TOP_K)
             additional_chunks.extend(expanded_chunks)
             print(f"RAG: Encontrados {len(expanded_chunks)} chunks adicionales (query expandida)")
-        
+
         if additional_chunks:
             chunks_before_combine = len(chunks)
             chunks, added_count, duplicate_count = combine_chunks(chunks, additional_chunks)
@@ -803,18 +804,19 @@ def query(question: str, conversation_history: Optional[List[Dict[str, Any]]] = 
             print(f"RAG: Combinados {chunks_before_combine} iniciales + {len(additional_chunks)} adicionales = {chunks_after_combine} unicos ({added_count} nuevos, {duplicate_count} duplicados)")
     else:
         print(f"RAG: Contexto inicial suficiente ({initial_chunk_count} chunks)")
-    
+
     response = generate_response(question, chunks, conversation_history)
     sources = [
         {
             "tipo": c["tipo_norma"],
             "numero": c["numero_norma"],
             "titulo": c.get("titulo_resumido", ""),
+            "sumario": c.get("titulo_sumario", ""),
             "year": c.get("year"),
         }
         for c in chunks
     ]
-    
+
     return response, sources
 
 
@@ -827,15 +829,15 @@ def reset_rag() -> None:
 
 class RAGSkill(BaseSkill):
     """Skill for answering questions about Argentine legislation using RAG.
-    
+
     This skill searches through indexed Argentine laws and generates
     responses using retrieved context.
     """
-    
+
     @property
     def name(self) -> str:
         return "rag"
-    
+
     @property
     def description(self) -> str:
         return (
@@ -846,27 +848,27 @@ class RAGSkill(BaseSkill):
             "'¿Cuáles son los artículos sobre libertad de expresión?', "
             "'¿Qué leyes se sancionaron en 2024?'"
         )
-    
+
     def initialize(self) -> None:
         """Load the LlamaIndex vector store."""
         initialize_rag()
-    
+
     def execute(
-        self, 
-        query_text: str, 
+        self,
+        query_text: str,
         conversation_history: Optional[List[Dict[str, Any]]] = None
     ) -> SkillResult:
         """Execute RAG query and return result.
-        
+
         Args:
             query_text: The user's question about legislation
             conversation_history: Previous conversation messages
-        
+
         Returns:
             SkillResult with response and legal sources
         """
         response, sources = query(query_text, conversation_history)
-        
+
         return SkillResult(
             response=response,
             sources=sources,
