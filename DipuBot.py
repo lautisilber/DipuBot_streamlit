@@ -29,7 +29,7 @@ def init_session_state():
                 "role": "assistant",
                 "content": (
 """
-¡Hola! Soy DipuBot, puedo ayudarte a buscar y comprender la legislación de nuestro país ¡Sé todas las leyes que fueron aprobadas entre 2023 y 2025! Si querés conocer mejor cómo funciono, te invito a revisar mi manual de uso en la sección “¿Qué es DipuBot?”.
+**¡Hola! Soy DipuBot**, puedo ayudarte a buscar y comprender la legislación de nuestro país ¡Sé todas las leyes que fueron aprobadas entre 2023 y 2025! Si querés conocer mejor cómo funciono, te invito a revisar mi manual de uso en la sección “¿Qué es DipuBot?” en el menu lateral.
 """
                 )
             }
@@ -115,7 +115,7 @@ def main():
         layout="centered"
     )
 
-    add_css()
+    add_css(main=True)
 
     st.title("DipuBot")
     st.caption("Consultá sobre legislación argentina")
