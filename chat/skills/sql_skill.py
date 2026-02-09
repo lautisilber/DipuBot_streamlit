@@ -83,6 +83,10 @@ Tabla: leyes_data_comisiones_diputados
 - ley_data_id (INTEGER, FK → leyes_data.id)
 - comision_diputado_id (INTEGER, FK → comisiones_diputados.id)
 
+Tabla: leyes_data_comisiones_senado
+- ley_data_id (INTEGER, FK → leyes_data.id)
+- comision_senado_id (INTEGER, FK → comisiones_senado.id)
+
 === TABLAS DE COMISIONES ===
 
 Tabla: comisiones_diputados
@@ -196,8 +200,9 @@ Reglas:
     Usar los JOINs documentados: leyes → leyes_data → leyes_data_afiliaciones → afiliaciones → firmantes
 11. BÚSQUEDA POR BLOQUE/PARTIDO: Usar LIKE para buscar en bloques.nombre
     Ejemplos de bloques: "PRO", "FRENTE DE TODOS", "UCR", "JUNTOS POR EL CAMBIO"
-12. Siempre usar SELECT DISTINCT cuando hay JOINs para evitar duplicados
-13. Ordenar resultados por año DESC cuando sea relevante"""
+12. NOMBRES DE COLUMNAS: Usar exactamente los nombres documentados. 
+13. Siempre usar SELECT DISTINCT cuando hay JOINs para evitar duplicados
+14. Ordenar resultados por año DESC cuando sea relevante"""
 
         messages = [
             {"role": "system", "content": system_prompt},
