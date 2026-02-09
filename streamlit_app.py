@@ -24,6 +24,12 @@ def init_session_state():
     """Inicializa el estado de la sesión."""
     if "messages" not in st.session_state:
         st.session_state.messages = []
+        # Mensaje de bienvenida automático
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": "¡Hola! Soy DipuBot, puedo ayudarte a buscar y comprender la legislación de nuestro país ¡Sé todas las leyes que fueron aprobadas entre 2023 y 2025! Si querés conocer mejor cómo funciono, te invito a revisar mi manual de uso en la sección “¿Qué es DipuBot?”.",
+            "sources": []
+        })
     if "rag_initialized" not in st.session_state:
         st.session_state.rag_initialized = False
 
@@ -94,6 +100,12 @@ def render_sidebar():
         
         if st.button("🗑️ Limpiar conversación"):
             st.session_state.messages = []
+            # Agregar mensaje de bienvenida después de limpiar
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": "¡Hola! Soy DipuBot, puedo ayudarte a buscar y comprender la legislación de nuestro país ¡Sé todas las leyes que fueron aprobadas entre 2023 y 2025! Si querés conocer mejor cómo funciono, te invito a revisar mi manual de uso en la sección “¿Qué es DipuBot?”.",
+                "sources": []
+            })
             st.rerun()
 
 
