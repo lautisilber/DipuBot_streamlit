@@ -164,6 +164,8 @@ def search(question: str, top_k: int = SIMILARITY_TOP_K) -> List[Dict[str, Any]]
             "tipo_norma": metadata.get("tipo_norma"),
             "numero_norma": metadata.get("numero_norma"),
             "titulo_resumido": metadata.get("titulo_resumido"),
+            "titulo_sumario": metadata.get("titulo_sumario"),
+            "organismo_origen": metadata.get("organismo_origen"),
             "fecha_sancion": metadata.get("fecha_sancion"),
             "year": metadata.get("year"),
             "chunk_index": metadata.get("chunk_index"),
@@ -809,7 +811,10 @@ def query(question: str, conversation_history: Optional[List[Dict[str, Any]]] = 
         {
             "tipo": c["tipo_norma"],
             "numero": c["numero_norma"],
-            "titulo": c.get("titulo_resumido", ""),
+            "titulo_resumido": c.get("titulo_resumido", ""),
+            "titulo_sumario": c.get("titulo_sumario", ""),
+            "organismo_origen": c.get("organismo_origen", ""),
+            "fecha_sancion": c.get("fecha_sancion", ""),
             "year": c.get("year"),
         }
         for c in chunks

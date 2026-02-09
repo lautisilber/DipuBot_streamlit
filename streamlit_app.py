@@ -6,6 +6,7 @@ Conecta con el módulo RAG que usa FAISS + OpenAI.
 """
 
 import os
+from datetime import datetime
 import streamlit as st
 from dotenv import load_dotenv
 
@@ -48,18 +49,40 @@ def display_sources(sources):
     if not sources:
         return
     
+    # No mostramos "fuentes consultadas" para consultas SQL
+    filtered_sources = [s for s in sources if s.get("type") != "sql_query"]
+    
+    if not filtered_sources:
+        return
+    
     with st.expander("📚 Fuentes consultadas", expanded=False):
-        for source in sources:
+        for source in filtered_sources:
             tipo = source.get("tipo", "")
             numero = source.get("numero", "")
-            titulo = source.get("titulo", "")
+            # Preferimos titulo_sumario sobre titulo_resumido
+            titulo = source.get("titulo_sumario") or source.get("titulo_resumido") or source.get("titulo", "")
+            organismo = source.get("organismo_origen", "")
+            fecha_sancion = source.get("fecha_sancion", "")
             year = source.get("year", "")
             
             source_text = f"**{tipo} {numero}**"
+
             if year:
                 source_text += f" ({year})"
+            
+            if fecha_sancion:
+                try:
+                    fecha_obj = datetime.strptime(fecha_sancion, "%Y-%m-%d")
+                    fecha_formateada = fecha_obj.strftime("%d/%m/%Y")
+                    source_text += f" - Sancionada: {fecha_formateada}"
+                except:
+                    source_text += f" - Sancionada: {fecha_sancion}"
+            
+            if organismo:
+                source_text += f" - {organismo}"
+            
             if titulo:
-                source_text += f" - {titulo}"
+                source_text += f" -  _{titulo}_"
             
             st.markdown(f"- {source_text}")
 
