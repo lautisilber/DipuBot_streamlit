@@ -17,9 +17,6 @@ from css.streamlit_css import add_css
 
 load_dotenv()
 
-def check_api_key():
-    """Verifica si hay API key de OpenAI configurada (env o session)."""
-    return bool(os.environ.get("OPENAI_API_KEY") or st.session_state.get("openai_api_key"))
 
 
 def init_session_state():
@@ -94,20 +91,6 @@ def display_sources(sources):
 def render_sidebar():
     """Renderiza el sidebar con configuración e información."""
     with st.sidebar:
-        # Configuración de API key (solo si no está en .env)
-        if not os.environ.get("OPENAI_API_KEY"):
-            st.header("Configuración")
-            api_key = st.text_input(
-                "OpenAI API Key",
-                type="password",
-                value=st.session_state.get("openai_api_key", ""),
-                placeholder="sk-...",
-                help="Tu API key de OpenAI. Se guarda solo en esta sesión."
-            )
-            if api_key:
-                st.session_state.openai_api_key = api_key
-                os.environ["OPENAI_API_KEY"] = api_key
-            st.divider()
 
         st.header("Información")
         st.markdown("""
@@ -164,10 +147,7 @@ def main():
         )
         st.stop()
 
-    # Verificar API key
-    if not check_api_key():
-        st.warning("Configurá tu API key de OpenAI en el sidebar para continuar.")
-        st.stop()
+
 
     # Inicializar Chat (solo una vez)
     if not st.session_state.rag_initialized:
