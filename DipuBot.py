@@ -59,7 +59,7 @@ def display_sources(sources):
     if not filtered_sources:
         return
     
-    with st.expander("📚 Fuentes consultadas", expanded=False):
+    with st.expander("Fuentes consultadas", expanded=False):
         for source in filtered_sources:
             tipo = source.get("tipo", "")
             numero = source.get("numero", "")
@@ -159,14 +159,14 @@ def main():
     # Verificar que existe el índice
     if not validate_index_exists():
         st.error(
-            "❌ No se encontró el índice de búsqueda. "
+            "No se encontró el índice de búsqueda. "
             "Ejecutá primero el ETL: `cd etl && python3 run_etl.py`"
         )
         st.stop()
 
     # Verificar API key
     if not check_api_key():
-        st.warning("⚠️ Configurá tu API key de OpenAI en el sidebar para continuar.")
+        st.warning("Configurá tu API key de OpenAI en el sidebar para continuar.")
         st.stop()
 
     # Inicializar Chat (solo una vez)
