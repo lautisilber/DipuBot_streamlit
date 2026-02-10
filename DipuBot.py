@@ -111,7 +111,7 @@ def render_sidebar():
 
         st.header("Información")
         st.markdown("""
-            DipuBot responde preguntas sobre la **actividad legislativa en el Congreso Nacional Argentino** usando inteligencia artificial y la base de datos oficial del Congreso.
+            DipuBot responde preguntas sobre **leyes aprobadas entre 2023 y 2025 en el Congreso Nacional Argentino** usando inteligencia artificial y la base de datos oficial del Congreso.
 
         **¿Cómo funciona?**
         1. Tu pregunta se busca en una base de leyes
