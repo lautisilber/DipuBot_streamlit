@@ -13,8 +13,9 @@ from dotenv import load_dotenv
 from chat.chat import initialize_chat, query
 from chat.config import validate_index_exists
 
-load_dotenv()
+from css.streamlit_css import add_css
 
+load_dotenv()
 
 def check_api_key():
     """Verifica si hay API key de OpenAI configurada (env o session)."""
@@ -25,10 +26,13 @@ def init_session_state():
     """Inicializa el estado de la sesión."""
     if "messages" not in st.session_state:
         st.session_state.messages = []
-        # Mensaje de bienvenida automático
         st.session_state.messages.append({
             "role": "assistant",
-            "content": "¡Hola! Soy DipuBot, puedo ayudarte a buscar y comprender la legislación de nuestro país ¡Sé todas las leyes que fueron aprobadas entre 2023 y 2025! Si querés conocer mejor cómo funciono, te invito a revisar mi manual de uso en la sección “¿Qué es DipuBot?”.",
+            "content": (
+"""
+**¡Hola! Soy DipuBot**, puedo ayudarte a buscar y comprender la legislación de nuestro país ¡Sé todas las leyes que fueron aprobadas entre 2023 y 2025! Si querés conocer mejor cómo funciono, te invito a revisar mi manual de uso en la sección "¿Qué es DipuBot?" en el menu lateral.
+"""
+            ),
             "sources": []
         })
     if "rag_initialized" not in st.session_state:
@@ -55,7 +59,7 @@ def display_sources(sources):
     if not filtered_sources:
         return
     
-    with st.expander("📚 Fuentes consultadas", expanded=False):
+    with st.expander("Fuentes consultadas", expanded=False):
         for source in filtered_sources:
             tipo = source.get("tipo", "")
             numero = source.get("numero", "")
@@ -64,7 +68,7 @@ def display_sources(sources):
             organismo = source.get("organismo_origen", "")
             fecha_sancion = source.get("fecha_sancion", "")
             year = source.get("year", "")
-            
+
             source_text = f"**{tipo} {numero}**"
 
             if year:
@@ -92,7 +96,7 @@ def render_sidebar():
     with st.sidebar:
         # Configuración de API key (solo si no está en .env)
         if not os.environ.get("OPENAI_API_KEY"):
-            st.header("🔑 Configuración")
+            st.header("Configuración")
             api_key = st.text_input(
                 "OpenAI API Key",
                 type="password",
@@ -104,29 +108,31 @@ def render_sidebar():
                 st.session_state.openai_api_key = api_key
                 os.environ["OPENAI_API_KEY"] = api_key
             st.divider()
-        
-        st.header("ℹ️ Información")
+
+        st.header("Información")
         st.markdown("""
-        Este chatbot responde preguntas sobre **legislación argentina** 
-        usando inteligencia artificial.
-        
+            DipuBot responde preguntas sobre la **actividad legislativa en el Congreso Nacional Argentino** usando inteligencia artificial y la base de datos oficial del Congreso.
+
         **¿Cómo funciona?**
         1. Tu pregunta se busca en una base de leyes
         2. Se encuentran los fragmentos más relevantes
         3. La IA genera una respuesta basada en esos textos
-        
+
         **Ejemplos de preguntas:**
-        - ¿Se suspenden las PASO en 2025?
-        - ¿Qué es el Parque Nacional Laguna El Palmar?
         - ¿Qué dice la ley sobre cardiopatías congénitas?
+        - ¿Cuál fue la última ley presentada y aprobada por María Teresa Margarita Gonzalez y qué dice la ley?
         """)
         
-        if st.button("🗑️ Limpiar conversación"):
+        if st.button("Limpiar conversación"):
             st.session_state.messages = []
             # Agregar mensaje de bienvenida después de limpiar
             st.session_state.messages.append({
                 "role": "assistant",
-                "content": "¡Hola! Soy DipuBot, puedo ayudarte a buscar y comprender la legislación de nuestro país ¡Sé todas las leyes que fueron aprobadas entre 2023 y 2025! Si querés conocer mejor cómo funciono, te invito a revisar mi manual de uso en la sección “¿Qué es DipuBot?”.",
+                "content": (
+"""
+**¡Hola! Soy DipuBot**, puedo ayudarte a buscar y comprender la legislación de nuestro país ¡Sé todas las leyes que fueron aprobadas entre 2023 y 2025! Si querés conocer mejor cómo funciono, te invito a revisar mi manual de uso en la sección "¿Qué es DipuBot?" en el menu lateral.
+"""
+                ),
                 "sources": []
             })
             st.rerun()
@@ -134,32 +140,35 @@ def render_sidebar():
 
 def main():
     st.set_page_config(
-        page_title="Legal RAG Argentina",
-        page_icon="⚖️",
+        page_title="DipuBot",
+        page_icon="assets/svg/quirqui-01.svg",
         layout="centered"
     )
-    
-    st.title("⚖️ Legal RAG Argentina")
+
+    add_css(main=True)
+
+    st.title("DipuBot")
     st.caption("Consultá sobre legislación argentina")
-    
+    st.logo("assets/svg/quirqui-01.svg")
+
     init_session_state()
-    
+
     # Renderizar sidebar primero (para que aparezca el input de API key)
     render_sidebar()
-    
+
     # Verificar que existe el índice
     if not validate_index_exists():
         st.error(
-            "❌ No se encontró el índice de búsqueda. "
+            "No se encontró el índice de búsqueda. "
             "Ejecutá primero el ETL: `cd etl && python3 run_etl.py`"
         )
         st.stop()
-    
+
     # Verificar API key
     if not check_api_key():
-        st.warning("⚠️ Configurá tu API key de OpenAI en el sidebar para continuar.")
+        st.warning("Configurá tu API key de OpenAI en el sidebar para continuar.")
         st.stop()
-    
+
     # Inicializar Chat (solo una vez)
     if not st.session_state.rag_initialized:
         with st.spinner("Cargando índice de leyes..."):
@@ -169,21 +178,21 @@ def main():
             except Exception as e:
                 st.error(f"Error al inicializar: {e}")
                 st.stop()
-    
+
     # Mostrar historial
     display_chat_history()
-    
+
     # Input del usuario
-    if prompt := st.chat_input("Hacé tu consulta legal..."):
+    if prompt := st.chat_input("Hacé tu pregunta..."):
         # Agregar mensaje del usuario
         st.session_state.messages.append({
             "role": "user",
             "content": prompt
         })
-        
+
         with st.chat_message("user"):
             st.write(prompt)
-        
+
         # Generar respuesta
         with st.chat_message("assistant"):
             with st.spinner("Buscando en la legislación..."):
@@ -193,7 +202,7 @@ def main():
                     response, sources = query(prompt, conversation_history)
                     st.write(response)
                     display_sources(sources)
-                    
+
                     # Guardar en historial
                     st.session_state.messages.append({
                         "role": "assistant",
