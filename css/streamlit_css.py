@@ -140,7 +140,7 @@ div:has(> {header_logo}) {{
     background-repeat: no-repeat;
     width: 21px;
     height: 21px;
-    margin-right: 10px;
+    /* margin-right: 10px; */
     flex-shrink: 0;
 
     /* Hide the text. */
