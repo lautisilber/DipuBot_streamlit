@@ -202,7 +202,11 @@ Reglas:
     Ejemplos de bloques: "PRO", "FRENTE DE TODOS", "UCR", "JUNTOS POR EL CAMBIO"
 12. NOMBRES DE COLUMNAS: Usar exactamente los nombres documentados. 
 13. Siempre usar SELECT DISTINCT cuando hay JOINs para evitar duplicados
-14. Ordenar resultados por año DESC cuando sea relevante"""
+14. Ordenar resultados por año DESC cuando sea relevante
+15. CASO ESPECIAL - BLOQUE PRO: Si el usuario pregunta por el bloque "PRO" o partido "PRO", 
+    buscar con: (b.nombre LIKE '%PRO%' OR b.nombre LIKE '%FRENTE PRO%') AND b.nombre NOT LIKE '%PRODUCCION Y TRABAJO%'
+    Si el usuario pregunta específicamente por "PRODUCCION Y TRABAJO", buscar con: b.nombre LIKE '%PRODUCCION Y TRABAJO%'
+    Esto es OBLIGATORIO para evitar confusiones entre estos bloques."""
 
         messages = [
             {"role": "system", "content": system_prompt},
