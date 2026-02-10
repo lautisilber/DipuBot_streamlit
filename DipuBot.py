@@ -6,6 +6,7 @@ Conecta con el módulo RAG que usa FAISS + OpenAI.
 """
 
 import os
+from datetime import datetime
 import streamlit as st
 from dotenv import load_dotenv
 
@@ -24,16 +25,16 @@ def check_api_key():
 def init_session_state():
     """Inicializa el estado de la sesión."""
     if "messages" not in st.session_state:
-        st.session_state.messages = [
-            {
-                "role": "assistant",
-                "content": (
+        st.session_state.messages = []
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": (
 """
-**¡Hola! Soy DipuBot**, puedo ayudarte a buscar y comprender la legislación de nuestro país ¡Sé todas las leyes que fueron aprobadas entre 2023 y 2025! Si querés conocer mejor cómo funciono, te invito a revisar mi manual de uso en la sección “¿Qué es DipuBot?” en el menu lateral.
+**¡Hola! Soy DipuBot**, puedo ayudarte a buscar y comprender la legislación de nuestro país ¡Sé todas las leyes que fueron aprobadas entre 2023 y 2025! Si querés conocer mejor cómo funciono, te invito a revisar mi manual de uso en la sección "¿Qué es DipuBot?" en el menu lateral.
 """
-                )
-            }
-        ]
+            ),
+            "sources": []
+        })
     if "rag_initialized" not in st.session_state:
         st.session_state.rag_initialized = False
 
@@ -51,23 +52,42 @@ def display_sources(sources):
     """Muestra las fuentes usadas en la respuesta."""
     if not sources:
         return
-
+    
+    # No mostramos "fuentes consultadas" para consultas SQL
+    filtered_sources = [s for s in sources if s.get("type") != "sql_query"]
+    
+    if not filtered_sources:
+        return
+    
     with st.expander("📚 Fuentes consultadas", expanded=False):
-        for source in sources:
+        for source in filtered_sources:
             tipo = source.get("tipo", "")
             numero = source.get("numero", "")
-            titulo = source.get("titulo", "")
-            sumario = source.get("sumario", "")
+            # Preferimos titulo_sumario sobre titulo_resumido
+            titulo = source.get("titulo_sumario") or source.get("titulo_resumido") or source.get("titulo", "")
+            organismo = source.get("organismo_origen", "")
+            fecha_sancion = source.get("fecha_sancion", "")
             year = source.get("year", "")
 
             source_text = f"**{tipo} {numero}**"
+
             if year:
                 source_text += f" ({year})"
+            
+            if fecha_sancion:
+                try:
+                    fecha_obj = datetime.strptime(fecha_sancion, "%Y-%m-%d")
+                    fecha_formateada = fecha_obj.strftime("%d/%m/%Y")
+                    source_text += f" - Sancionada: {fecha_formateada}"
+                except:
+                    source_text += f" - Sancionada: {fecha_sancion}"
+            
+            if organismo:
+                source_text += f" - {organismo}"
+            
             if titulo:
-                source_text += f" - {titulo}"
-            if sumario:
-                source_text += f": {sumario}"
-
+                source_text += f" -  _{titulo}_"
+            
             st.markdown(f"- {source_text}")
 
 
@@ -105,6 +125,16 @@ def render_sidebar():
         
         if st.button("Limpiar conversación"):
             st.session_state.messages = []
+            # Agregar mensaje de bienvenida después de limpiar
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": (
+"""
+**¡Hola! Soy DipuBot**, puedo ayudarte a buscar y comprender la legislación de nuestro país ¡Sé todas las leyes que fueron aprobadas entre 2023 y 2025! Si querés conocer mejor cómo funciono, te invito a revisar mi manual de uso en la sección "¿Qué es DipuBot?" en el menu lateral.
+"""
+                ),
+                "sources": []
+            })
             st.rerun()
 
 
