@@ -85,6 +85,11 @@ body,
     background-size: cover !important;
     background-repeat: no-repeat !important;
     background-attachment: fixed !important;
+    color: #1A1A2E !important;
+}}
+
+{main_div} p, {main_div} span, {main_div} li, {main_div} h1, {main_div} h2, {main_div} h3, {main_div} strong, {main_div} em, {main_div} a {{
+    color: #1A1A2E !important;
 }}
 
 {sidebar_logo} {{
