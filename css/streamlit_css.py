@@ -13,7 +13,7 @@ def get_encoded_png(filename: str) -> str:
     png_encoded = base64.b64encode(png).decode()
     return png_encoded
 
-def add_css(main: bool=False):
+def add_css(main: bool=False) -> None:
     main_div = "section.stMain"
     chat_bubble_inner = 'div[data-testid="stChatMessage"]'
     chat_bubble = f'div[data-testid="stLayoutWrapper"]:has(> {chat_bubble_inner})'
@@ -35,7 +35,7 @@ def add_css(main: bool=False):
 
     bg_svg_encoded = get_encoded_svg("assets/svg/fondo-06.svg")
 
-    st.markdown(
+    st.html(
 f"""
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -96,7 +96,7 @@ body,
     height: 100% !important;
 }}
 
-div:has(> {sidebar_logo}) {{
+div:has(> {sidebar_logo}), button:has(> {sidebar_logo}) {{
     padding-top: 4px !important;
     height: calc(100% - 4px) !important;
 }}
@@ -123,14 +123,12 @@ div:has(> {header_logo}) {{
     background-color: #F4F7FA !important;
 }}
 </style>
-""",
-        unsafe_allow_html=True
-    )
+""")
 
     if main:
         avatar_assistant_svg_encoded = get_encoded_svg("assets/svg/quirqui-02.svg")
         title_svg_encoded = get_encoded_svg("assets/svg/titulo-01.svg")
-        st.markdown(f"""
+        st.html(f"""
 <style>
 {main_title} {{
     background-image: url("data:image/svg+xml;base64,{title_svg_encoded}");
@@ -151,6 +149,29 @@ div:has(> {header_logo}) {{
     overflow: hidden;
 }}
 </style>
-""",
-            unsafe_allow_html=True
-        )
+""")
+
+def add_js() -> None:
+    st.html("""
+<script>
+    function change_app_name() {
+        document.querySelectorAll('a[data-testid="stSidebarNavLink"] > span')
+            .forEach(span => {
+                if (span.textContent.trim() === 'streamlit_app' || span.textContent.trim() === 'streamlit app') {
+                    span.innerHTML = 'DipuBot';
+                }
+            });
+    }
+
+    function on_dom_loader(cb) {
+        console.log("Running that");
+        if (document.readyState === "complete") {
+            cb();
+        } else {
+            window.addEventListener("load", cb);
+        }
+    }
+    
+    on_dom_loader(change_app_name);
+</script>
+""", unsafe_allow_javascript=True)

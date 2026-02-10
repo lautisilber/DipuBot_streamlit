@@ -1,8 +1,9 @@
 import streamlit as st
 
-from css.streamlit_css import add_css
+from css.streamlit_css import add_css, add_js
 
 add_css()
+add_js()
 
 st.set_page_config(
     page_title="DipuBot | ¿Cómo funciona el poder legislativo?",

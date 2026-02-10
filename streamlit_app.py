@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 from chat.chat import initialize_chat, query
 from chat.config import validate_index_exists
 
-from css.streamlit_css import add_css
+from css.streamlit_css import add_css, add_js
 
 load_dotenv()
 
@@ -129,6 +129,7 @@ def main():
     )
 
     add_css(main=True)
+    add_js()
 
     st.title("DipuBot")
     st.caption("Consultá sobre legislación argentina")

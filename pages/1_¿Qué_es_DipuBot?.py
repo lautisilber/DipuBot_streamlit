@@ -1,8 +1,9 @@
 import streamlit as st
 
-from css.streamlit_css import add_css, get_encoded_svg, get_encoded_png
+from css.streamlit_css import add_css, add_js, get_encoded_svg, get_encoded_png
 
 add_css()
+add_js()
 
 st.set_page_config(
     page_title="DipuBot | ¿Qué es DipuBot?",
