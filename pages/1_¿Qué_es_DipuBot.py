@@ -17,7 +17,7 @@ st.logo("assets/svg/quirqui-01.svg")
 
 st.markdown("""
 DipuBot es un chatbot impulsado por inteligencia artificial, **alimentado ├║nicamente con la base de datos
-oficial del Congreso Nacional de Argentina.** Actualmente incluye ├║nicamente leyes aprobadas entre 2023 y 2025.
+oficial del Congreso Nacional de Argentina.** Actualmente incluye ├║nicamente leyes aprobadas entre 1997 y 2025.
 DipuBot te **brinda informaci├│n resumida, clara y f├ícil de entender sobre la actividad legislativa.**
 
 La idea no es que DipuBot determine por vos qu├® representa cada una de estas corrientes, sino que puedas informarte

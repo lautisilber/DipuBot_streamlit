@@ -93,9 +93,41 @@ print(response)
 | Archivo | Descripción |
 |---------|-------------|
 | `run_etl.py` | Script principal del ETL |
+| `ingest_historico.py` | Ingesta de leyes históricas desde InfoLEG (amplía el corpus hasta 1997) |
 | `splitters.py` | Chunking inteligente para textos legales |
 | `search.py` | Utilidad de búsqueda (legacy, usar query_engine de LlamaIndex) |
 | `requirements.txt` | Dependencias Python |
+
+## Ampliación del corpus (leyes históricas, hasta 1997)
+
+`ingest_historico.py` descarga los datos oficiales de **InfoLEG** (datos
+abiertos, licencia CC-BY 4.0) y arma un SQLite compatible con `run_etl.py`,
+sin tocar las bases existentes. Tiene tres etapas reanudables:
+
+```bash
+# 1) Metadatos: baja el ZIP oficial y filtra las Leyes del rango de años.
+python ingest_historico.py metadatos --desde 1997 --hasta 2025
+
+# 2) Textos: descarga en paralelo el .htm de cada ley (URL derivada del
+#    id_norma) y cachea el texto extraído. Reanudable: reintenta los fallidos.
+python ingest_historico.py textos --workers 10
+
+# 3) Build: arma un SQLite unificado uniendo una base previa con las históricas.
+python ingest_historico.py build \
+    --salida ../data/raw/leyes-1997-2025_unificada.sqlite3 \
+    --base-previa ../data/raw/leyes-2015-2025_12_20.sqlite3
+```
+
+Luego se reindexa reutilizando todo el pipeline existente:
+
+```bash
+DATABASE_PATH=../data/raw/leyes-1997-2025_unificada.sqlite3 python run_etl.py
+```
+
+Los artefactos intermedios (ZIP, CSV de fichas, textos cacheados) quedan en
+`data/ingest/`. Las páginas de InfoLEG están en `cp1252` y el CSV oficial en
+`UTF-8`; el script decodifica cada fuente con su encoding y guarda todo en
+UTF-8, aplicando la misma `normalize_text` del ETL (Fase 3).
 
 ## Chunking de leyes
 

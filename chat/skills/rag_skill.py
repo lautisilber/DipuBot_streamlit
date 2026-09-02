@@ -44,6 +44,10 @@ from chat.config import (
     RAG_ENABLE_LLM_CHECK,
     RAG_ENABLE_QUERY_REWRITING,
     RAG_REWRITING_MIN_QUERY_LENGTH,
+    RAG_ENABLE_RERANKING,
+    RAG_RERANKER_MODEL,
+    RAG_RERANK_CANDIDATES,
+    RAG_RERANK_TEXT_CHARS,
 )
 from chat.skills.base import BaseSkill, SkillResult
 
@@ -53,6 +57,8 @@ load_dotenv()
 # === Cache global (singleton) ===
 _llama_index: Optional[VectorStoreIndex] = None
 _openai_client: Optional[OpenAI] = None
+_reranker = None            # cross-encoder (se carga perezosamente)
+_reranker_failed = False    # si la carga falla una vez, no reintentar en cada query
 
 
 def _get_openai_client() -> OpenAI:
@@ -121,11 +127,16 @@ def initialize_rag() -> None:
     Llamar una vez al inicio de la aplicación.
     """
     global _llama_index
-    
+
     if _llama_index is not None:
         return  # Ya inicializado
-    
+
     _llama_index = load_index()
+
+    # Precargar el reranker en el arranque para que la PRIMERA consulta del
+    # usuario no pague el costo de descargar/cargar el modelo (una vez, ~15-40s).
+    if RAG_ENABLE_RERANKING:
+        _get_reranker()
 
 
 def search(question: str, top_k: int = SIMILARITY_TOP_K) -> List[Dict[str, Any]]:
@@ -158,7 +169,9 @@ def search(question: str, top_k: int = SIMILARITY_TOP_K) -> List[Dict[str, Any]]
         
         results.append({
             "rank": i + 1,
-            "distance": float(score) if score is not None else None,
+            # Con IndexFlatIP + embeddings normalizados de OpenAI, este score es
+            # similitud coseno en [0, 1] (mayor = más similar).
+            "similarity": float(score) if score is not None else None,
             "doc_id": doc_id,
             "text": text,
             "tipo_norma": metadata.get("tipo_norma"),
@@ -170,8 +183,88 @@ def search(question: str, top_k: int = SIMILARITY_TOP_K) -> List[Dict[str, Any]]
             "year": metadata.get("year"),
             "chunk_index": metadata.get("chunk_index"),
         })
-    
+
     return results
+
+
+# === Reranking (cross-encoder) ===
+def _get_reranker():
+    """
+    Carga (perezosamente) el modelo cross-encoder de reranking.
+
+    Devuelve el modelo, o None si el reranking está desactivado o el modelo no
+    se pudo cargar (en ese caso el RAG sigue funcionando sin rerankear).
+    La carga es lenta la primera vez (descarga + init), por eso se cachea.
+    """
+    global _reranker, _reranker_failed
+    if not RAG_ENABLE_RERANKING or _reranker_failed:
+        return None
+    if _reranker is not None:
+        return _reranker
+    try:
+        from sentence_transformers import CrossEncoder
+        _reranker = CrossEncoder(RAG_RERANKER_MODEL, max_length=512)
+        print(f"RAG: reranker cargado ({RAG_RERANKER_MODEL})")
+        return _reranker
+    except Exception as e:
+        # Si falla (falta la librería, sin memoria, etc.), lo desactivamos para
+        # esta sesión y seguimos sin reranking. No rompemos la búsqueda.
+        _reranker_failed = True
+        print(f"RAG: reranking desactivado (no se pudo cargar el modelo: {e})")
+        return None
+
+
+def rerank(question: str, chunks: List[Dict[str, Any]], top_k: int = SIMILARITY_TOP_K) -> List[Dict[str, Any]]:
+    """
+    Reordena los chunks con un cross-encoder y devuelve los mejores `top_k`.
+
+    A diferencia de la similitud vectorial (que mira pregunta y chunk por
+    separado), el cross-encoder los evalúa JUNTOS, con mucha más precisión.
+    Es clave para desambiguar leyes del mismo tema (ej: "Acuerdos" con distintos
+    países). Si el reranker no está disponible, devuelve los chunks sin cambios.
+
+    Args:
+        question: pregunta del usuario
+        chunks: candidatos traídos por la búsqueda vectorial
+        top_k: cuántos devolver tras reordenar
+
+    Returns:
+        Lista de chunks reordenada y recortada a `top_k`.
+    """
+    if not chunks:
+        return chunks
+
+    model = _get_reranker()
+    if model is None:
+        # Sin reranker: devolver los primeros top_k tal como vinieron.
+        return chunks[:top_k]
+
+    # Armar pares (pregunta, texto del chunk) con un poco de metadata útil para
+    # desambiguar (el título específico es lo que distingue leyes del mismo tema).
+    # Truncamos el texto: el cross-encoder es lento en CPU con textos largos y el
+    # comienzo del fragmento + el título alcanzan para juzgar relevancia.
+    pairs = []
+    for c in chunks:
+        titulo = c.get("titulo_resumido") or c.get("titulo_sumario") or ""
+        texto = (c.get("text", "") or "")[:RAG_RERANK_TEXT_CHARS]
+        pairs.append([question, f"{titulo}. {texto}"])
+
+    try:
+        scores = model.predict(pairs)
+    except Exception as e:
+        print(f"RAG: error al rerankear, uso orden original ({e})")
+        return chunks[:top_k]
+
+    # Guardar el score de rerank y reordenar de mayor a menor.
+    scored = list(zip(chunks, scores))
+    scored.sort(key=lambda x: float(x[1]), reverse=True)
+
+    reranked = []
+    for c, s in scored[:top_k]:
+        c = dict(c)
+        c["rerank_score"] = float(s)
+        reranked.append(c)
+    return reranked
 
 
 def format_conversation_history(messages: List[Dict[str, Any]]) -> List[Dict[str, str]]:
@@ -423,7 +516,7 @@ def evaluate_retrieval_quality(chunks: List[Dict[str, Any]]) -> Tuple[bool, str]
     if not chunks:
         return True, "wider"
 
-    scores = [c.get("distance") for c in chunks if c.get("distance") is not None]
+    scores = [c.get("similarity") for c in chunks if c.get("similarity") is not None]
     if not scores:
         return True, "wider"
 
@@ -610,9 +703,8 @@ def combine_chunks(initial: List[Dict[str, Any]], additional: List[Dict[str, Any
         else:
             duplicate_count += 1
 
-    # Reordenar por score (distance) - menor es mejor si es distancia, mayor si es similitud
-    # Asumimos que es similitud (mayor es mejor) y ordenamos descendente
-    combined.sort(key=lambda x: x.get("distance", 0) or 0, reverse=True)
+    # Reordenar por similitud coseno: mayor es mejor, así que ordenamos descendente.
+    combined.sort(key=lambda x: x.get("similarity", 0) or 0, reverse=True)
 
     return combined, added_count, duplicate_count
 
@@ -645,10 +737,17 @@ Tenés acceso a dos fuentes de información para responder:
 2. HISTORIAL CONVERSACIONAL: Mensajes previos de nuestra conversación (preguntas y respuestas anteriores)
 
 ALCANCE DE TU BASE DE CONOCIMIENTO:
-- Contiene ÚNICAMENTE leyes APROBADAS entre 2023 y 2025
+- Contiene ÚNICAMENTE leyes APROBADAS entre 1997 y 2025
 - NO contiene proyectos de ley ni información sobre quién votó cada ley
 - Si el usuario pregunta por proyectos de ley, explicale que solo tenés información sobre leyes aprobadas, no sobre proyectos
 - Si el usuario pregunta por votaciones o quién votó una ley, explicale que no disponés de esa información
+
+CUANDO HAY VARIAS LEYES DEL MISMO TEMA (ej: muchas leyes de "Acuerdos", "Convenios" o "Tratados"):
+- Es muy común: muchas leyes comparten un tema genérico pero tratan asuntos distintos (distintos países, materias o años).
+- Respondé sobre la ley MÁS RELEVANTE al pedido del usuario (la que mejor coincide con lo que preguntó).
+- INMEDIATAMENTE DESPUÉS, avisá brevemente que hay OTRAS leyes del mismo tema en el contexto, nombrándolas por número y año (ej: "También hay otras leyes sobre acuerdos: la Ley 27.747 (2024) y la Ley 27.775 (2024)").
+- Si la pregunta es demasiado genérica para saber cuál quiere, pedile UN dato que la distinga (año, país o materia), pero igual mostrá primero la más relevante.
+- No inventes cuál quería el usuario: si no está claro, dejá que elija.
 
 CÓMO DECIDIR QUÉ USAR:
 
@@ -764,7 +863,14 @@ def query(question: str, conversation_history: Optional[List[Dict[str, Any]]] = 
                 search_query = rewritten_query
                 print(f"RAG: Query reescrita: {rewritten_query[:100]}...")
 
-    chunks = search(search_query)
+    # Si el reranking está activo, traemos MÁS candidatos de FAISS y luego el
+    # cross-encoder los reordena y deja los mejores SIMILARITY_TOP_K. Traer más
+    # candidatos mejora el recall antes de la selección fina.
+    if RAG_ENABLE_RERANKING:
+        candidates = search(search_query, top_k=RAG_RERANK_CANDIDATES)
+        chunks = rerank(search_query, candidates, top_k=SIMILARITY_TOP_K)
+    else:
+        chunks = search(search_query)
     initial_chunk_count = len(chunks)
 
     if not chunks:
@@ -773,7 +879,7 @@ def query(question: str, conversation_history: Optional[List[Dict[str, Any]]] = 
     needs_more, strategy = evaluate_retrieval_quality(chunks)
 
     if needs_more:
-        avg_score = sum(c.get('distance', 0) or 0 for c in chunks) / len(chunks)
+        avg_score = sum(c.get('similarity', 0) or 0 for c in chunks) / len(chunks)
         print(f"RAG: Necesita mas contexto (estrategia: {strategy}, chunks: {initial_chunk_count}, score: {avg_score:.3f})")
     elif RAG_ENABLE_LLM_CHECK:
         print(f"RAG: Verificando suficiencia con LLM...")
@@ -827,6 +933,43 @@ def query(question: str, conversation_history: Optional[List[Dict[str, Any]]] = 
     return response, sources
 
 
+def suggest_related_questions(sources: List[Dict[str, Any]], max_suggestions: int = 3) -> List[str]:
+    """
+    Arma preguntas de seguimiento sobre otras leyes del mismo tema que ya
+    trajo la búsqueda, para ofrecerlas como opciones rápidas al usuario.
+
+    No hace ninguna llamada extra al LLM ni a la búsqueda: reutiliza las
+    `sources` ya recuperadas para esta misma respuesta. Si solo hay una ley
+    en las fuentes, no hay "otras leyes" que sugerir y devuelve una lista vacía.
+
+    Args:
+        sources: fuentes ya devueltas por `query()` para la respuesta actual
+        max_suggestions: cantidad máxima de preguntas a sugerir
+
+    Returns:
+        Lista de preguntas sugeridas (puede estar vacía)
+    """
+    seen_leyes = {}
+    for s in sources:
+        tipo = s.get("tipo") or s.get("tipo_norma") or "Ley"
+        numero = s.get("numero") or s.get("numero_norma")
+        if not numero:
+            continue
+        key = f"{tipo} {numero}"
+        if key not in seen_leyes:
+            titulo = s.get("titulo_sumario") or s.get("titulo") or s.get("titulo_resumido") or ""
+            seen_leyes[key] = titulo
+
+    if len(seen_leyes) < 2:
+        return []
+
+    suggestions = [
+        f"¿Qué dice la {key}?" + (f" ({titulo})" if titulo else "")
+        for key, titulo in list(seen_leyes.items())[:max_suggestions]
+    ]
+    return suggestions
+
+
 def reset_rag() -> None:
     """Resetea el cache del RAG (útil para recargar)."""
     global _llama_index, _openai_client
@@ -875,6 +1018,10 @@ class RAGSkill(BaseSkill):
             SkillResult with response and legal sources
         """
         response, sources = query(query_text, conversation_history)
+
+        related_questions = suggest_related_questions(sources)
+        if related_questions:
+            sources = sources + [{"type": "related_questions", "questions": related_questions}]
 
         return SkillResult(
             response=response,

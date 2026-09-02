@@ -10,6 +10,7 @@ Pipeline para:
 
 import os
 import sqlite3
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any
@@ -48,6 +49,28 @@ METADATA_COLUMNS = [
 
 TEXT_COLUMN = "texto_original"
 
+# --- FASE 2: control de qué metadata "ensucia" el embedding ---------------
+# Por defecto, LlamaIndex PEGA toda la metadata al texto antes de generar el
+# embedding (y antes de mostrárselo al LLM). Campos largos o redundantes como
+# `texto_actualizado` (¡otra copia entera de la ley!), resúmenes, observaciones
+# y links contaminan el vector y disparan el costo/tokens sin aportar a la
+# búsqueda semántica.
+#
+# Solución: seguimos guardando esos campos en la metadata (por si se quieren
+# para mostrar/citar), pero le decimos a LlamaIndex que NO los incluya ni en el
+# embedding ni en el prompt del LLM, vía excluded_*_metadata_keys.
+
+# Metadata útil para el embedding y para que el LLM cite (corta y relevante).
+EMBED_METADATA_COLUMNS = [
+    "tipo_norma", "numero_norma", "titulo_resumido", "titulo_sumario",
+    "organismo_origen", "fecha_sancion", "year",
+]
+
+# Todo lo demás se excluye del embedding Y del prompt del LLM.
+EXCLUDED_METADATA_COLUMNS = [
+    col for col in METADATA_COLUMNS if col not in EMBED_METADATA_COLUMNS
+]
+
 
 # ============================================================================
 # FUNCIONES DE CHUNKING (usando nuestro LegalSplitter)
@@ -78,8 +101,20 @@ def documents_to_nodes(documents: List[Document], splitter_type: str = "legal") 
                     "doc_id": doc.doc_id,
                 }
             )
+
+            # FASE 2: excluir del embedding y del prompt del LLM los campos
+            # pesados/redundantes y las claves internas de chunking. Así el
+            # vector se calcula SOLO con el texto legal + metadata útil.
+            internal_keys = ["chunk_index", "total_chunks", "doc_id"]
+            keys_to_exclude = [
+                k for k in (EXCLUDED_METADATA_COLUMNS + internal_keys)
+                if k in text_node.metadata
+            ]
+            text_node.excluded_embed_metadata_keys = keys_to_exclude
+            text_node.excluded_llm_metadata_keys = keys_to_exclude
+
             all_nodes.append(text_node)
-    
+
     return all_nodes
 
 
@@ -118,19 +153,68 @@ def fetch_all_documents(conn: sqlite3.Connection) -> List[Dict[str, Any]]:
     return documents
 
 
+# --- FASE 3: normalización de texto -----------------------------------------
+# IMPORTANTE (hallazgo): el texto de la base NO está corrupto. Los acentos
+# (á, é, í, ó, ú, ñ) están bien guardados en UTF-8. El "mojibake" que se veía
+# antes (Naci�n, C�mara) era un problema de la CONSOLA de Windows al mostrar,
+# no de los datos. Verificado: 0 caracteres de reemplazo (U+FFFD) y 0 firmas de
+# doble codificación en toda la base.
+#
+# Aun así, hacemos una limpieza liviana y segura que mejora la consistencia del
+# texto antes de generar embeddings, sin tocar el contenido legal:
+#   - Normalización Unicode NFC (une acentos combinados en un solo carácter).
+#   - Reemplaza espacios "raros" (no-break space U+00A0) por espacio normal.
+#   - Quita guiones suaves invisibles (soft hyphen U+00AD) y otros invisibles.
+
+# Caracteres invisibles/problemáticos a eliminar por completo.
+_CHARS_TO_STRIP = {
+    "­",  # soft hyphen (guion suave invisible)
+    "​",  # zero-width space
+    "﻿",  # BOM / zero-width no-break space
+}
+
+# Caracteres a reemplazar por un espacio normal.
+_CHARS_TO_SPACE = {
+    " ",  # non-breaking space
+    " ",  # figure space
+    " ",  # narrow no-break space
+}
+
+
+def normalize_text(text: str) -> str:
+    """Limpieza liviana y segura del texto (no altera el contenido legal)."""
+    if not text:
+        return text
+    # 1) Unificar la forma de los acentos (NFC).
+    text = unicodedata.normalize("NFC", text)
+    # 2) Sacar invisibles y homogeneizar espacios raros.
+    out = []
+    for ch in text:
+        if ch in _CHARS_TO_STRIP:
+            continue
+        out.append(" " if ch in _CHARS_TO_SPACE else ch)
+    return "".join(out)
+
+
 def convert_to_llama_documents(db_documents: List[Dict[str, Any]]) -> List[Document]:
     """Convierte documentos de la BD a Documents de LlamaIndex."""
     llama_docs = []
-    
+
     for doc in tqdm(db_documents, desc="Convirtiendo a Documents"):
         text = doc.get(TEXT_COLUMN, "")
         if not text or not text.strip():
             continue
-        
+
+        # FASE 3: normalizar el texto legal antes de indexarlo.
+        text = normalize_text(text)
+
         # Metadata: todas las columnas excepto texto_original
         metadata = {col: doc.get(col) for col in METADATA_COLUMNS}
-        # Convertir valores None a string para evitar problemas
-        metadata = {k: (str(v) if v is not None else "") for k, v in metadata.items()}
+        # Convertir valores None a string, normalizando también los textos
+        metadata = {
+            k: (normalize_text(str(v)) if v is not None else "")
+            for k, v in metadata.items()
+        }
         
         llama_docs.append(Document(
             text=text,
@@ -188,8 +272,13 @@ def run_etl(
     )
     Settings.embed_model = embed_model
     
-    # Crear FAISS vector store
-    faiss_index = faiss.IndexFlatL2(EMBEDDING_DIMENSIONS)
+    # Crear FAISS vector store.
+    # Usamos IndexFlatIP (producto interno) en vez de IndexFlatL2 (distancia euclídea).
+    # Los embeddings de OpenAI (text-embedding-3-*) vienen normalizados a norma 1,
+    # por lo que el producto interno equivale a la similitud coseno: score en [0, 1],
+    # donde MAYOR = más similar. Esto alinea los scores con la lógica de
+    # evaluate_retrieval_quality() y combine_chunks() en chat/skills/rag_skill.py.
+    faiss_index = faiss.IndexFlatIP(EMBEDDING_DIMENSIONS)
     vector_store = FaissVectorStore(faiss_index=faiss_index)
     storage_context = StorageContext.from_defaults(vector_store=vector_store)
     

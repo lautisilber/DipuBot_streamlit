@@ -16,7 +16,7 @@ load_dotenv()
 # Directorio raíz del proyecto (relativo a este archivo)
 PROJECT_ROOT = Path(__file__).parent.parent
 INDEXED_DIR = PROJECT_ROOT / "data" / "indexed"
-DB_PATH = PROJECT_ROOT / "data" / "raw" / "leyes-leyes-2023-2025_12_20-2026_01_19.sqlite3"
+DB_PATH = PROJECT_ROOT / "data" / "raw" / "leyes-1997-2025_unificada.sqlite3"
 
 # === Modelos ===
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-5.2")
@@ -34,6 +34,23 @@ RAG_ENABLE_LLM_CHECK = os.getenv("RAG_ENABLE_LLM_CHECK", "true").lower() == "tru
 # === RAG Query Rewriting Settings ===
 RAG_ENABLE_QUERY_REWRITING = os.getenv("RAG_ENABLE_QUERY_REWRITING", "true").lower() == "true"
 RAG_REWRITING_MIN_QUERY_LENGTH = int(os.getenv("RAG_REWRITING_MIN_QUERY_LENGTH", "20"))
+
+# === RAG Reranking Settings ===
+# El reranking usa un cross-encoder que reordena los candidatos que trae FAISS,
+# mirando la pregunta y cada fragmento JUNTOS (más preciso que la similitud
+# vectorial). Ideal para desambiguar leyes del mismo tema (ej: "Acuerdos").
+# Es opcional: si el modelo no se puede cargar, el RAG sigue funcionando sin él.
+RAG_ENABLE_RERANKING = os.getenv("RAG_ENABLE_RERANKING", "true").lower() == "true"
+# Modelo cross-encoder (multilingüe, sirve para español). Alternativa liviana:
+# "cross-encoder/ms-marco-MiniLM-L-6-v2" (~90 MB, inglés, menos preciso).
+RAG_RERANKER_MODEL = os.getenv("RAG_RERANKER_MODEL", "BAAI/bge-reranker-base")
+# Cuántos candidatos traer de FAISS ANTES de rerankear (se reordena y se cortan
+# los top SIMILARITY_TOP_K). Más candidatos = mejor recall, algo más de latencia.
+RAG_RERANK_CANDIDATES = int(os.getenv("RAG_RERANK_CANDIDATES", "15"))
+# Cuántos caracteres de cada fragmento se le pasan al reranker. El cross-encoder
+# es lento con textos largos en CPU; con ~400 chars (título + comienzo del texto)
+# alcanza para juzgar relevancia y baja MUCHO la latencia (de ~5s a ~1s).
+RAG_RERANK_TEXT_CHARS = int(os.getenv("RAG_RERANK_TEXT_CHARS", "400"))
 
 # === Model Token Limits ===
 # Límites por modelo (context window, TPM, tokens reservados)

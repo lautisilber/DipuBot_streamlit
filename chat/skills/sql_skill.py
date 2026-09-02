@@ -340,10 +340,38 @@ IMPORTANTE SOBRE EL ALCANCE DE LA BASE DE DATOS:
             )
             
         except sqlite3.Error as e:
+            # Caso conocido: las consultas sobre firmantes/bloques/comisiones
+            # necesitan tablas (leyes_data, firmantes, afiliaciones, etc.) que hoy
+            # NO están en la base temática (cobertura 1997-2025). Esos datos
+            # parlamentarios solo existen para 2023-2025 y en otra base. En vez de
+            # mostrarle al usuario un error técnico ("no such table: leyes_data"),
+            # le explicamos con palabras el alcance real de lo que sí podemos responder.
+            # TODO (ver DEVELOPER_DOC / RESUMEN_AVANCES): incorporar firmantes y
+            # bloques para el corpus histórico 1997+ para levantar esta limitación.
+            details = str(e)
+            if "no such table" in details.lower():
+                return SkillResult(
+                    response=(
+                        "Por ahora no tengo cargados los datos de **firmantes, bloques ni "
+                        "trámites parlamentarios** para responder ese tipo de consulta. "
+                        "Mi base de búsqueda cubre el **texto y la ficha de las leyes de 1997 a 2025**, "
+                        "pero la información sobre qué legislador impulsó o firmó cada norma "
+                        "todavía no forma parte de ella.\n\n"
+                        "Sí puedo ayudarte con el **contenido de las leyes**: por ejemplo, qué "
+                        "establece una ley sobre determinado tema, o buscar leyes por materia, "
+                        "número o año. Además, tené en cuenta que **no dispongo de datos de "
+                        "votaciones** (quién votó a favor o en contra de una ley)."
+                    ),
+                    sources=[],
+                    metadata={"error": "missing_parliamentary_tables", "details": details}
+                )
             return SkillResult(
-                response=f"Error al ejecutar la consulta en la base de datos: {str(e)}",
+                response=(
+                    "No pude completar esa consulta sobre la base de datos. "
+                    "Probá reformularla o preguntarme directamente por el contenido de una ley."
+                ),
                 sources=[],
-                metadata={"error": "db_error", "details": str(e)}
+                metadata={"error": "db_error", "details": details}
             )
         except Exception as e:
             return SkillResult(
