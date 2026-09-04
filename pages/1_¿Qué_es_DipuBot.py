@@ -13,7 +13,7 @@ st.set_page_config(
 
 st.title("┬┐Qu├® es DipuBot?")
 # st.caption("Consult├í sobre legislaci├│n argentina")
-st.logo("assets/svg/quirqui-01.svg")
+st.logo("assets/svg/quirqui-02.svg")
 
 st.markdown("""
 DipuBot es un chatbot impulsado por inteligencia artificial, **alimentado ├║nicamente con la base de datos

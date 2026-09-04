@@ -137,20 +137,6 @@ def render_sidebar():
     """Renderiza el sidebar con configuración e información."""
     with st.sidebar:
 
-        st.header("Información")
-        st.markdown("""
-            DipuBot responde preguntas sobre **leyes aprobadas entre 1997 y 2025 en el Congreso Nacional Argentino** usando inteligencia artificial y la base de datos oficial del Congreso.
-
-        **¿Cómo funciona?**
-        1. Tu pregunta se busca en una base de leyes
-        2. Se encuentran los fragmentos más relevantes
-        3. La IA genera una respuesta basada en esos textos
-
-        **Ejemplos de preguntas:**
-        - ¿Qué dice la ley sobre cardiopatías congénitas?
-        - ¿Cuál fue la última ley presentada y aprobada por María Teresa Margarita Gonzalez y qué dice la ley?
-        """)
-        
         if st.button("Limpiar conversación"):
             st.session_state.messages = []
             # Agregar mensaje de bienvenida después de limpiar
@@ -178,7 +164,7 @@ def main():
 
     st.title("DipuBot")
     st.caption("Consultá sobre legislación argentina")
-    st.logo("assets/svg/quirqui-01.svg")
+    st.logo("assets/svg/quirqui-02.svg")
 
     init_session_state()
 

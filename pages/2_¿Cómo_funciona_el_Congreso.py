@@ -13,7 +13,7 @@ st.set_page_config(
 
 st.title("┬┐C├│mo funciona el poder legislativo?")
 # st.caption("Consult├í sobre legislaci├│n argentina")
-st.logo("assets/svg/quirqui-01.svg")
+st.logo("assets/svg/quirqui-02.svg")
 
 st.markdown("""
 
