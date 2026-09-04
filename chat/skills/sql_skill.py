@@ -263,16 +263,33 @@ Reglas:
     def _format_results(self, results: List[Dict[str, Any]], query: str, sql: str) -> str:
         """Use LLM to format SQL results into natural language."""
         if not results:
-            return "No se encontraron resultados para tu consulta."
+            return "¡Uh! No encontré resultados para tu consulta 😕"
         
         # Truncate results for the prompt
         results_str = str(results[:10])  # Limit for prompt size
         if len(results) > 10:
             results_str += f"\n... y {len(results) - 10} resultados más."
         
-        system_prompt = """Sos un asistente que presenta resultados de consultas SQL de forma clara y natural en español.
+        system_prompt = """Sos un asistente que presenta resultados de consultas sobre leyes argentinas de forma clara y natural en español, con un estilo cercano, amigable y optimista.
 Formateá los resultados de manera legible, usando listas o tablas si es apropiado.
 Sé conciso pero informativo.
+
+TONO Y ESTILO DE LA RESPUESTA:
+- Tono amigable, cercano y levemente informal. Tuteá siempre (vos/tenés/podés)
+- Optimista y entusiasta: usá signos de exclamación cuando venga al caso ("¡Encontré 12 leyes sobre eso!", "¡Sí! Hay una...")
+- Podés arrancar con una frase breve de enganche ("¡Qué buena pregunta!"), sin exagerar ni repetirla siempre
+- Cerrá con una pregunta breve y cálida de verificación si la respuesta es larga: "¿Quedó claro?". Esto NO es ser proactivo: es solo verificar comprensión, nunca ofrecer buscar más información
+
+FORMATO — INFORMACIÓN FRAGMENTADA:
+- Partí la respuesta en pedacitos digeribles, con párrafos MUY cortos (1 a 3 líneas) separados por líneas en blanco
+- Presentá los resultados en viñetas o lista numerada en vez de encadenarlos en una sola oración
+- Poné en **negrita** los datos clave: números de ley, años y cantidades
+
+EMOJIS:
+- Usá emojis con moderación (aprox. 1 cada 2 o 3 bloques, nunca varios seguidos): 📜 ⚖️ 📅 ✅ 💡 🔎 👉 ⚠️ 🙌
+- El emoji acompaña, nunca reemplaza la información
+
+IMPORTANTE: el tono canchero NO cambia el contenido. No inventes ni agregues datos que no estén en los resultados.
 
 IMPORTANTE SOBRE EL ALCANCE DE LA BASE DE DATOS:
 - La base de datos contiene ÚNICAMENTE leyes APROBADAS, NO proyectos de ley ni leyes "presentadas".
@@ -340,10 +357,38 @@ IMPORTANTE SOBRE EL ALCANCE DE LA BASE DE DATOS:
             )
             
         except sqlite3.Error as e:
+            # Caso conocido: las consultas sobre firmantes/bloques/comisiones
+            # necesitan tablas (leyes_data, firmantes, afiliaciones, etc.) que hoy
+            # NO están en la base temática (cobertura 1997-2025). Esos datos
+            # parlamentarios solo existen para 2023-2025 y en otra base. En vez de
+            # mostrarle al usuario un error técnico ("no such table: leyes_data"),
+            # le explicamos con palabras el alcance real de lo que sí podemos responder.
+            # TODO (ver DEVELOPER_DOC / RESUMEN_AVANCES): incorporar firmantes y
+            # bloques para el corpus histórico 1997+ para levantar esta limitación.
+            details = str(e)
+            if "no such table" in details.lower():
+                return SkillResult(
+                    response=(
+                        "Por ahora no tengo cargados los datos de **firmantes, bloques ni "
+                        "trámites parlamentarios** para responder ese tipo de consulta. "
+                        "Mi base de búsqueda cubre el **texto y la ficha de las leyes de 1997 a 2025**, "
+                        "pero la información sobre qué legislador impulsó o firmó cada norma "
+                        "todavía no forma parte de ella.\n\n"
+                        "Sí puedo ayudarte con el **contenido de las leyes**: por ejemplo, qué "
+                        "establece una ley sobre determinado tema, o buscar leyes por materia, "
+                        "número o año. Además, tené en cuenta que **no dispongo de datos de "
+                        "votaciones** (quién votó a favor o en contra de una ley)."
+                    ),
+                    sources=[],
+                    metadata={"error": "missing_parliamentary_tables", "details": details}
+                )
             return SkillResult(
-                response=f"Error al ejecutar la consulta en la base de datos: {str(e)}",
+                response=(
+                    "No pude completar esa consulta sobre la base de datos. "
+                    "Probá reformularla o preguntarme directamente por el contenido de una ley."
+                ),
                 sources=[],
-                metadata={"error": "db_error", "details": str(e)}
+                metadata={"error": "db_error", "details": details}
             )
         except Exception as e:
             return SkillResult(

@@ -87,3 +87,19 @@ Thumbs.db
 *.sqlite
 *.sqlite3
 *.db
+
+# =========================
+# Artefactos de datos (NO versionar)
+# Insumos y productos del ETL: se regeneran o se descargan aparte.
+# =========================
+data/ingest/
+data/indexed/
+data/raw/
+data/stories/
+
+# Salidas de evaluación (los scripts .py sí se versionan)
+etl/eval/eval_dataset*.json
+etl/eval/*.log
+etl/eval/*.bak
+etl/eval/results/
+etl/eval/eval_sample*.json
