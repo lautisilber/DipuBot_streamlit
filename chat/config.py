@@ -5,7 +5,9 @@ Configuración centralizada para el módulo de chat/RAG.
 Define paths al índice LlamaIndex y parámetros del modelo.
 """
 
+import gzip
 import os
+import shutil
 from pathlib import Path
 from typing import Optional, Tuple, Dict
 from dotenv import load_dotenv
@@ -133,13 +135,41 @@ def find_latest_index() -> Optional[Path]:
         return None
     
     latest_dir = llama_index_dirs[0]
-    
+
+    # El índice se versiona comprimido (.json.gz) porque docstore.json supera
+    # el límite de 100 MB por archivo de GitHub. LlamaIndex lee JSON plano, así
+    # que lo expandimos acá, antes de que StorageContext toque el directorio.
+    _decompress_index_files(latest_dir)
+
     # Verificar que el directorio tenga los archivos necesarios
     required_files = ["default__vector_store.json", "docstore.json", "index_store.json"]
     if not all((latest_dir / f).exists() for f in required_files):
         return None
-    
+
     return latest_dir
+
+
+def _decompress_index_files(index_dir: Path) -> None:
+    """
+    Expande los .json.gz del índice que todavía no tengan su .json al lado.
+
+    Es idempotente: si el .json ya existe (corrida local o reinicio del server)
+    no vuelve a descomprimir. Escribe a un archivo temporal y recién después lo
+    renombra, para no dejar un .json a medio escribir si el proceso se corta.
+    """
+    for gz_path in index_dir.glob("*.json.gz"):
+        json_path = gz_path.with_suffix("")  # quita el .gz
+        if json_path.exists():
+            continue
+
+        tmp_path = json_path.with_suffix(".json.tmp")
+        try:
+            with gzip.open(gz_path, "rb") as src, open(tmp_path, "wb") as dst:
+                shutil.copyfileobj(src, dst, 1024 * 1024)
+            tmp_path.replace(json_path)
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
 
 
 def validate_index_exists() -> bool:
