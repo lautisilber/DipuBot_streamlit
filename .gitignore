@@ -94,6 +94,9 @@ Thumbs.db
 # =========================
 data/ingest/
 data/indexed/
+# El índice se versiona SOLO comprimido (.json.gz), agregado con `git add -f`:
+# config.py lo expande al arrancar. Los .json descomprimidos son artefactos
+# locales que quedan ignorados por la regla de arriba y no deben subirse.
 data/raw/
 data/stories/
 
