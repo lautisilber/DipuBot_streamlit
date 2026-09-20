@@ -10,6 +10,9 @@ import os
 import sys
 import re
 import hashlib
+import json
+from chat.response_policy import RESPONSE_POLICY
+from chat.legal_lookup import lookup_laws
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional
 
@@ -29,6 +32,7 @@ from llama_index.core import StorageContext, VectorStoreIndex, load_index_from_s
 from llama_index.embeddings.openai import OpenAIEmbedding
 
 from chat.config import (
+    DB_PATH,
     find_latest_index,
     validate_index_exists,
     SIMILARITY_TOP_K,
@@ -396,6 +400,7 @@ def needs_query_rewriting(query: str, conversation_history: Optional[List[Dict[s
         r'\b(la|el|las|los)\s+(ley|norma|decreto|resolución|anterior|mencionada|citada)\b',
         r'\b(punto|artículo|sección|capítulo)\s+[a-z]\b',
         r'\b(ambas|otra|otras|mencionadas|anteriores)\b',
+        r'\b(primera|segunda|tercera|cuarta|quinta|sexta|séptima|octava|novena|décima|ultima|última)\b',
     ]
 
     for pattern in referential_patterns:
@@ -456,7 +461,7 @@ def rewrite_query_with_history(query: str, conversation_history: List[Dict[str, 
         content = msg.get("content", "")
         if role in ["user", "assistant"] and content:
             role_name = "Usuario" if role == "user" else "Asistente"
-            history_text += f"{role_name}: {content[:300]}\n"
+            history_text += f"{role_name}: {content}\n"
             valid_messages += 1
 
     if valid_messages == 0:
@@ -481,7 +486,8 @@ IMPORTANTE:
 - Responde SOLO con la query reescrita, sin explicaciones
 - No uses comillas ni markdown
 - Mantén la intención original pero hazla más específica
-- Si no puedes determinar a qué se refiere, usa la query original pero expandida con términos relacionados"""
+- Si no puedes determinar a qué se refiere, devolvé la consulta original sin inventar números ni referencias.
+- Para ordinales como «la décima», respetá el orden del listado anterior completo."""
 
     try:
         response = client.chat.completions.create(
@@ -730,87 +736,20 @@ def generate_response(question: str, context_chunks: List[Dict], conversation_hi
 
     chunks_tokens = estimate_chunks_tokens(context_chunks)
 
-    system_prompt = """Sos un asistente legal especializado en legislación argentina, con un estilo cercano, amigable y optimista.
-Tenés acceso a dos fuentes de información para responder:
+    system_prompt = RESPONSE_POLICY + """
+Sos DipuBot, un asistente de información sobre legislación argentina.
+La colección contiene leyes aprobadas de 1997 a 2025, no todos los proyectos
+presentados ni votaciones. Respondé únicamente con evidencia documental.
+Usá el historial para identificar referencias (por ejemplo, «la décima ley»),
+pero no lo tomes como evidencia del contenido de una norma: las respuestas
+anteriores pueden tener errores. Sustentá el contenido en los documentos recuperados.
+Si se pide una ley concreta, centrate en esa ley y no la sustituyas por otras.
+No opines, compares ni aconsejes. Citá número de ley y artículo cuando esté disponible.
+"""
 
-1. CONTEXTO ACTUAL: Fragmentos de texto legal que te proporciono ahora (leyes encontradas para esta pregunta)
-2. HISTORIAL CONVERSACIONAL: Mensajes previos de nuestra conversación (preguntas y respuestas anteriores)
-
-ALCANCE DE TU BASE DE CONOCIMIENTO:
-- Contiene ÚNICAMENTE leyes APROBADAS entre 1997 y 2025
-- NO contiene proyectos de ley ni información sobre quién votó cada ley
-- Si el usuario pregunta por proyectos de ley, explicale que solo tenés información sobre leyes aprobadas, no sobre proyectos
-- Si el usuario pregunta por votaciones o quién votó una ley, explicale que no disponés de esa información
-
-CUANDO HAY VARIAS LEYES DEL MISMO TEMA (ej: muchas leyes de "Acuerdos", "Convenios" o "Tratados"):
-- Es muy común: muchas leyes comparten un tema genérico pero tratan asuntos distintos (distintos países, materias o años).
-- Respondé sobre la ley MÁS RELEVANTE al pedido del usuario (la que mejor coincide con lo que preguntó).
-- INMEDIATAMENTE DESPUÉS, avisá brevemente que hay OTRAS leyes del mismo tema en el contexto, nombrándolas por número y año (ej: "También hay otras leyes sobre acuerdos: la Ley 27.747 (2024) y la Ley 27.775 (2024)").
-- Si la pregunta es demasiado genérica para saber cuál quiere, pedile UN dato que la distinga (año, país o materia), pero igual mostrá primero la más relevante.
-- No inventes cuál quería el usuario: si no está claro, dejá que elija.
-
-CÓMO DECIDIR QUÉ USAR:
-
-- Si la pregunta es NUEVA o busca información sobre leyes NO mencionadas antes:
-  → Usá PRINCIPALMENTE el contexto actual (fragmentos de leyes proporcionados)
-  → El historial puede ayudar para contexto general, pero el contexto actual tiene prioridad
-
-- Si la pregunta es de SEGUIMIENTO o hace referencia a algo ya mencionado:
-  → Usá el HISTORIAL para entender a qué se refiere (ej: "esa ley", "la ley anterior", "¿cuándo se sancionó?")
-  → Combiná el historial con el contexto actual si es necesario
-  → Si la pregunta es sobre detalles de una ley ya mencionada, el historial puede ser suficiente
-
-Instrucciones generales:
-- Respondé de manera clara y precisa
-- Citá las leyes específicas cuando sea posible (ej: "Según la Ley 27.551...")
-- El historial tiene prioridad para entender referencias y contexto conversacional
-- Si la información disponible no es suficiente para responder, decilo claramente
-- Se cuidadoso en decir que una ley no está en los documentos proporcionados, puede ser que no la encuentres nada más
-- No menciones frases como "el contexto legal que me pegaste", pues el usuario no tiene acceso a qué fragmentos de ley te llegan, eso lo determina un RAG
-- Si el usuario pregunta por las leyes de la conversación actual, fijate que haya un mensaje del historial donde el usuario o tú la mencionaron
-- No inventes información legal que no esté en el contexto actual, es decir, los fragmentos de texto legal proporcionados
-- RESPONDÉ ÚNICAMENTE basándote en los fragmentos de leyes que te llegan como contexto. NO uses conocimiento propio ni información que no esté explícitamente en los fragmentos proporcionados por el retriever. Si la respuesta no está en los fragmentos, decí que no encontraste información al respecto
-- NUNCA seas proactivo: no sugieras al usuario buscar más información, no digas "si querés saber más...", "si necesitás más información...", ni ofrezcas buscar cosas adicionales. Limitáte a responder lo que se preguntó
-- NO compares ni opines sobre leyes. Si te piden comparar leyes o dar tu opinión, respondé que no podés comparar ni opinar, que solo podés proporcionar la información que está en tu base de conocimientos
-- Tu rol es informar, no aconsejar ni sugerir
-
-TONO Y ESTILO DE LA RESPUESTA:
-- Usá un tono amigable, cercano y levemente informal, como quien le explica algo a un amigo. Tuteá siempre (vos/tenés/podés)
-- Sé optimista y entusiasta. Usá signos de exclamación cuando venga al caso: "¡Qué buena pregunta!", "¡Sí! La Ley 27.551...", "¡Justo hay una ley sobre eso!"
-- Podés arrancar con una breve frase de enganche antes de la información (ej: "¡Buenísima pregunta!", "¡Mirá qué interesante esto!"), pero sin exagerar ni repetir siempre la misma
-- Cerrá con una pregunta breve y cálida de verificación cuando la respuesta sea larga o técnica: "¿Quedó claro?", "¿Se entiende?". Esto NO cuenta como ser proactivo: es solo verificar comprensión, nunca ofrecer buscar más información
-- Nada de lenguaje acartonado ni jurídico rebuscado. Si tenés que usar un término técnico, explicalo en criollo entre paréntesis
-
-FORMATO — INFORMACIÓN FRAGMENTADA:
-- Partí la respuesta en pedacitos digeribles. Evitá los bloques largos de texto corrido
-- Usá párrafos MUY cortos (1 a 3 líneas cada uno), separados por líneas en blanco
-- Cuando haya varios datos, enumeralos en viñetas o en una lista numerada en vez de encadenarlos en una sola oración
-- Poné en **negrita** los datos clave: números de ley, años y conceptos centrales
-- Si hay varias leyes, dedicale su propio bloque a cada una en lugar de mezclarlas
-
-EMOJIS:
-- Usá emojis para dar aire y marcar secciones, con moderación: aproximadamente 1 cada 2 o 3 bloques, nunca varios seguidos
-- Sugeridos según el contenido: 📜 ⚖️ 📅 ✅ 💡 🔎 👉 ⚠️ 🙌
-- El emoji acompaña, nunca reemplaza la información ni se mete en el medio de una cita legal
-
-IMPORTANTE: el tono canchero NUNCA cambia el contenido. Seguís sin inventar nada, sin opinar, sin comparar leyes y sin salirte de los fragmentos que te llegan como contexto. Si no encontrás la información, decilo igual de claro, solo que con amabilidad (ej: "¡Uh! Esa no la tengo en mi base 😕")."""
-    
     system_prompt_tokens = count_tokens(system_prompt, LLM_MODEL)
 
-    user_prompt_template = """CONTEXTO LEGAL ACTUAL (leyes encontradas para esta pregunta):
-{context}
-
----
-
-Pregunta del usuario: {question}
-
-Analizá la pregunta y decidí:
-1. ¿Es una pregunta nueva o de seguimiento?
-2. ¿Qué información necesitás del contexto actual vs del historial?
-Al usuario solo le interesa que le respondas usando la información más relevante. No le digas al usuario si la pregunta es nueva o de seguimiento, solo responde."""
-
-    user_prompt_base = user_prompt_template.format(context="", question=question)
-    user_prompt_base_tokens = count_tokens(user_prompt_base, LLM_MODEL)
+    user_prompt_base_tokens = count_tokens(question, LLM_MODEL)
 
     response_tokens_estimate = 1000
 
@@ -829,7 +768,6 @@ Al usuario solo le interesa que le respondas usando la información más relevan
 
     messages = [{"role": "system", "content": system_prompt}]
 
-    has_history = False
     if conversation_history:
         if max_history_tokens > 0:
             truncated_history = truncate_history_by_tokens(
@@ -843,15 +781,14 @@ Al usuario solo le interesa que le respondas usando la información más relevan
         if truncated_history:
             formatted_history = format_conversation_history(truncated_history)
             messages.extend(formatted_history)
-            has_history = True
 
-    if has_history:
-        history_note = "\n\nNOTA: Hay un historial conversacional disponible arriba. Usalo para entender referencias a leyes mencionadas previamente."
-    else:
-        history_note = ""
-
-    user_prompt = user_prompt_template.format(context=context, question=question) + history_note
-    messages.append({"role": "user", "content": user_prompt})
+    messages.append({"role": "user", "content": question})
+    messages.append({"role": "assistant", "content": None, "tool_calls": [{
+        "id": "legal_search", "type": "function",
+        "function": {"name": "buscar_leyes", "arguments": "{}"},
+    }]})
+    messages.append({"role": "tool", "tool_call_id": "legal_search",
+                     "content": json.dumps({"documentos": context}, ensure_ascii=False)})
 
     response = client.chat.completions.create(
         model=LLM_MODEL,
@@ -886,7 +823,10 @@ def query(question: str, conversation_history: Optional[List[Dict[str, Any]]] = 
     # Si el reranking está activo, traemos MÁS candidatos de FAISS y luego el
     # cross-encoder los reordena y deja los mejores SIMILARITY_TOP_K. Traer más
     # candidatos mejora el recall antes de la selección fina.
-    if RAG_ENABLE_RERANKING:
+    exact_chunks = lookup_laws(search_query, DB_PATH)
+    if exact_chunks:
+        chunks = exact_chunks
+    elif RAG_ENABLE_RERANKING:
         candidates = search(search_query, top_k=RAG_RERANK_CANDIDATES)
         chunks = rerank(search_query, candidates, top_k=SIMILARITY_TOP_K)
     else:
@@ -896,15 +836,15 @@ def query(question: str, conversation_history: Optional[List[Dict[str, Any]]] = 
     if not chunks:
         return "No encontré información relevante para tu consulta.", []
 
-    needs_more, strategy = evaluate_retrieval_quality(chunks)
+    needs_more, strategy = (False, None) if exact_chunks else evaluate_retrieval_quality(chunks)
 
     if needs_more:
         avg_score = sum(c.get('similarity', 0) or 0 for c in chunks) / len(chunks)
         print(f"RAG: Necesita mas contexto (estrategia: {strategy}, chunks: {initial_chunk_count}, score: {avg_score:.3f})")
-    elif RAG_ENABLE_LLM_CHECK:
+    elif RAG_ENABLE_LLM_CHECK and not exact_chunks:
         print(f"RAG: Verificando suficiencia con LLM...")
 
-    if not needs_more and RAG_ENABLE_LLM_CHECK:
+    if not needs_more and RAG_ENABLE_LLM_CHECK and not exact_chunks:
         is_sufficient = evaluate_context_sufficiency(question, chunks)
         if not is_sufficient:
             needs_more = True

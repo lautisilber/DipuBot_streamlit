@@ -12,7 +12,7 @@ AZUL = "#3853A4"
 TEXTO = "#1A1A2E"
 
 def get_encoded_svg(filename: str) -> str:
-    svg = Path(filename).read_text()
+    svg = Path(filename).read_text(encoding="utf-8")
     svg_encoded = base64.b64encode(svg.encode()).decode()
     return svg_encoded
 
@@ -442,10 +442,36 @@ div:has(> {header_logo}) {{
         font-size: 16px !important; /* evita el zoom automático de iOS */
     }}
 
-    /* Sidebar: ocupa casi toda la pantalla al abrirse */
-    section[data-testid="stSidebar"] {{
-        width: 85vw !important;
-        min-width: 85vw !important;
+    /* Respetar el ancho y desplazamiento nativos al cerrar el menú. */
+    section[data-testid="stSidebar"][aria-expanded="true"] {{
+        width: min(85vw, 21rem) !important;
+        min-width: 0 !important;
+        max-width: 85vw !important;
+    }}
+
+    section[data-testid="stSidebar"][aria-expanded="false"] {{
+        visibility: hidden;
+        pointer-events: none;
+    }}
+
+    {sidebar} a[data-testid="stSidebarNavLink"] span {{
+        white-space: normal !important;
+        overflow-wrap: anywhere;
+    }}
+
+    /* El pie nativo reserva espacio; no posicionar el input por separado. */
+    {chat_input_bg} {{
+        bottom: 0 !important;
+        background-color: #FFFFFF !important;
+    }}
+
+    div[data-testid="stBottomBlockContainer"] {{
+        padding: 0.5rem 0  max(0.5rem, env(safe-area-inset-bottom)) !important;
+    }}
+
+    {main_div} h1 {{
+        font-size: 2rem;
+        overflow-wrap: break-word;
     }}
 
     {sidebar} a[data-testid="stSidebarNavLink"] {{

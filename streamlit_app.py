@@ -35,7 +35,7 @@ def init_session_state():
             "role": "assistant",
             "content": (
 """
-**¡Hola! Soy DipuBot**, puedo ayudarte a buscar y comprender la legislación de nuestro país ¡Sé todas las leyes que fueron aprobadas entre 1997 y 2025! Si querés conocer mejor cómo funciono, te invito a revisar mi manual de uso en la sección "¿Qué es DipuBot?" en el menu lateral.
+**Soy DipuBot.** Podés consultar el contenido de las leyes argentinas de 1997 a 2025 incluidas en esta base. El manual de uso está en la sección "¿Qué es DipuBot?" del menú lateral.
 """
             ),
             "sources": []
@@ -144,7 +144,7 @@ def render_sidebar():
                 "role": "assistant",
                 "content": (
 """
-**¡Hola! Soy DipuBot**, puedo ayudarte a buscar y comprender la legislación de nuestro país ¡Sé todas las leyes que fueron aprobadas entre 1997 y 2025! Si querés conocer mejor cómo funciono, te invito a revisar mi manual de uso en la sección "¿Qué es DipuBot?" en el menu lateral.
+**Soy DipuBot.** Podés consultar el contenido de las leyes argentinas de 1997 a 2025 incluidas en esta base. El manual de uso está en la sección "¿Qué es DipuBot?" del menú lateral.
 """
                 ),
                 "sources": []

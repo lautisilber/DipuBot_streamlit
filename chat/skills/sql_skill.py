@@ -6,6 +6,7 @@ Uses an LLM to generate SQL queries from natural language.
 """
 
 import os
+import json
 import sqlite3
 from typing import List, Dict, Any, Optional
 
@@ -14,6 +15,9 @@ from dotenv import load_dotenv
 
 from chat.skills.base import BaseSkill, SkillResult
 from chat.config import DB_PATH, LLM_MODEL
+from chat.response_policy import RESPONSE_POLICY
+from chat.parliamentary import PARLIAMENTARY_SCHEMA
+from pathlib import Path
 
 load_dotenv()
 
@@ -45,105 +49,9 @@ Tabla: leyes
 - numero_ley_actualizado (INTEGER): Número de ley actualizado
 - year (INTEGER): Año de la norma
 
-=== TABLAS DE FIRMANTES Y BLOQUES ===
-
-Tabla: firmantes
-- id (INTEGER, PRIMARY KEY)
-- nombre (TEXT, UNIQUE): Nombre completo del diputado/senador (ej: "FERNANDEZ, ALBERTO")
-
-Tabla: bloques (partidos políticos)
-- id (INTEGER, PRIMARY KEY)
-- nombre (TEXT, UNIQUE): Nombre del bloque (ej: "PRO", "FRENTE DE TODOS", "UCR")
-
-Tabla: afiliaciones (relación firmante ↔ bloque en un momento dado)
-- id (INTEGER, PRIMARY KEY)
-- firmante_id (INTEGER, FK → firmantes.id)
-- bloque_id (INTEGER, FK → bloques.id)
-- fecha (TEXT): Fecha de la afiliación (YYYY-MM-DD)
-- distrito (TEXT): Distrito electoral
-
-=== TABLA DE DATOS EXTENDIDOS DE LEYES ===
-
-Tabla: leyes_data (metadata adicional de cada ley)
-- id (INTEGER, PRIMARY KEY)
-- ley_id (INTEGER, FK → leyes.id)
-- iniciado_en (TEXT): Cámara donde se inició
-- expediente_diputados (TEXT): Número de expediente en Diputados
-- expediente_senado (TEXT): Número de expediente en Senado
-- publicado_en (TEXT): Dónde fue publicado
-- fecha_proyecto (TEXT): Fecha del proyecto (YYYY-MM-DD)
-
-=== TABLAS DE RELACIÓN MANY-TO-MANY ===
-
-Tabla: leyes_data_afiliaciones (vincula leyes con sus firmantes)
-- ley_data_id (INTEGER, FK → leyes_data.id)
-- afiliacion_id (INTEGER, FK → afiliaciones.id)
-
-Tabla: leyes_data_comisiones_diputados
-- ley_data_id (INTEGER, FK → leyes_data.id)
-- comision_diputado_id (INTEGER, FK → comisiones_diputados.id)
-
-Tabla: leyes_data_comisiones_senado
-- ley_data_id (INTEGER, FK → leyes_data.id)
-- comision_senado_id (INTEGER, FK → comisiones_senado.id)
-
-=== TABLAS DE COMISIONES ===
-
-Tabla: comisiones_diputados
-- id (INTEGER, PRIMARY KEY)
-- name (TEXT): Nombre de la comisión
-
-Tabla: comisiones_senado
-- id (INTEGER, PRIMARY KEY)
-- name (TEXT): Nombre de la comisión
-
-=== TABLAS DE TRÁMITES Y DICTÁMENES ===
-
-Tabla: dictamenes
-- id (INTEGER, PRIMARY KEY)
-- ley_data_id (INTEGER, FK → leyes_data.id)
-- camara (TEXT): 'Diputados' o 'Senado'
-- dictamen (TEXT): Contenido del dictamen
-- fecha (TEXT): Fecha (YYYY-MM-DD)
-
-Tabla: tramites
-- id (INTEGER, PRIMARY KEY)
-- ley_data_id (INTEGER, FK → leyes_data.id)
-- camara (TEXT): 'Diputados' o 'Senado'
-- fecha (TEXT): Fecha (YYYY-MM-DD)
-- resultado (TEXT): Resultado del trámite
-
-=== PATRONES DE JOIN COMUNES ===
-
-Para buscar leyes por nombre de firmante (usar LIKE para fuzzy matching):
-SELECT DISTINCT l.numero_norma, l.titulo_resumido, l.year, f.nombre
-FROM leyes l
-JOIN leyes_data ld ON ld.ley_id = l.id
-JOIN leyes_data_afiliaciones lda ON lda.ley_data_id = ld.id
-JOIN afiliaciones a ON a.id = lda.afiliacion_id
-JOIN firmantes f ON f.id = a.firmante_id
-WHERE f.nombre LIKE '%APELLIDO%'
-ORDER BY l.year DESC;
-
-Para buscar leyes por bloque/partido político:
-SELECT DISTINCT l.numero_norma, l.titulo_resumido, l.year, b.nombre as bloque
-FROM leyes l
-JOIN leyes_data ld ON ld.ley_id = l.id
-JOIN leyes_data_afiliaciones lda ON lda.ley_data_id = ld.id
-JOIN afiliaciones a ON a.id = lda.afiliacion_id
-JOIN bloques b ON b.id = a.bloque_id
-WHERE b.nombre LIKE '%NOMBRE_BLOQUE%';
-
-Para contar leyes por firmante:
-SELECT f.nombre, COUNT(DISTINCT l.id) as cantidad_leyes
-FROM firmantes f
-JOIN afiliaciones a ON a.firmante_id = f.id
-JOIN leyes_data_afiliaciones lda ON lda.afiliacion_id = a.id
-JOIN leyes_data ld ON ld.id = lda.ley_data_id
-JOIN leyes l ON l.id = ld.ley_id
-GROUP BY f.id
-ORDER BY cantidad_leyes DESC;
 """
+
+LEYES_SCHEMA += PARLIAMENTARY_SCHEMA
 
 
 class SQLSkill(BaseSkill):
@@ -197,16 +105,17 @@ Reglas:
 9. Para consultas generales (no de texto), evitar campos largos como texto_original/texto_actualizado
 10. BÚSQUEDA POR FIRMANTE: Los nombres están en formato "APELLIDO, NOMBRE" en mayúsculas.
     Para buscar por nombre, usar LIKE '%APELLIDO%' o LIKE '%NOMBRE%' (fuzzy matching).
-    Usar los JOINs documentados: leyes → leyes_data → leyes_data_afiliaciones → afiliaciones → firmantes
-11. BÚSQUEDA POR BLOQUE/PARTIDO: Usar LIKE para buscar en bloques.nombre
-    Ejemplos de bloques: "PRO", "FRENTE DE TODOS", "UCR", "JUNTOS POR EL CAMBIO"
+    Consultar directamente la vista autorias_leyes y su columna firmante.
+11. BÚSQUEDA POR BLOQUE: Usar autorias_leyes.bloque. Para PRO usar
+    UPPER(bloque) IN ('PRO', 'FRENTE PRO', 'PRO - PROPUESTA REPUBLICANA').
+    No buscar '%PRO%': también coincide con PRODUCCION Y TRABAJO y otros bloques.
 12. NOMBRES DE COLUMNAS: Usar exactamente los nombres documentados. 
 13. Siempre usar SELECT DISTINCT cuando hay JOINs para evitar duplicados
 14. Ordenar resultados por año DESC cuando sea relevante
-15. CASO ESPECIAL - BLOQUE PRO: Si el usuario pregunta por el bloque "PRO" o partido "PRO", 
-    buscar con: (b.nombre LIKE '%PRO%' OR b.nombre LIKE '%FRENTE PRO%') AND b.nombre NOT LIKE '%PRODUCCION Y TRABAJO%'
-    Si el usuario pregunta específicamente por "PRODUCCION Y TRABAJO", buscar con: b.nombre LIKE '%PRODUCCION Y TRABAJO%'
-    Esto es OBLIGATORIO para evitar confusiones entre estos bloques."""
+15. Si pregunta quién propuso o presentó una ley, devolver rol='autor'. Si pide
+    firmantes, incluir ambos roles. Incluir rol, bloque, fuente_url y fuente_autor_url en listados.
+16. Los conteos de leyes usan COUNT(DISTINCT ley_id), nunca COUNT(*) sobre firmas.
+17. No inventar tablas, columnas ni afiliaciones partidarias ausentes del esquema."""
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -249,7 +158,7 @@ Reglas:
     
     def _execute_sql(self, sql: str) -> List[Dict[str, Any]]:
         """Execute SQL query and return results as list of dicts."""
-        conn = sqlite3.connect(self._db_path)
+        conn = sqlite3.connect(Path(self._db_path).resolve().as_uri() + "?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
         
         try:
@@ -263,44 +172,36 @@ Reglas:
     def _format_results(self, results: List[Dict[str, Any]], query: str, sql: str) -> str:
         """Use LLM to format SQL results into natural language."""
         if not results:
-            return "¡Uh! No encontré resultados para tu consulta 😕"
+            if "autorias_leyes" in sql.lower():
+                return ("No encontré coincidencias en los datos de autoría disponibles. "
+                        "La cobertura de proyectos vinculados a leyes de 2008 a 2025 es parcial; "
+                        "esto no demuestra que una persona o bloque no haya presentado proyectos.")
+            return "No encontré resultados para esa consulta en los datos disponibles."
         
-        # Truncate results for the prompt
-        results_str = str(results[:10])  # Limit for prompt size
-        if len(results) > 10:
-            results_str += f"\n... y {len(results) - 10} resultados más."
-        
-        system_prompt = """Sos un asistente que presenta resultados de consultas sobre leyes argentinas de forma clara y natural en español, con un estilo cercano, amigable y optimista.
-Formateá los resultados de manera legible, usando listas o tablas si es apropiado.
-Sé conciso pero informativo.
-
-TONO Y ESTILO DE LA RESPUESTA:
-- Tono amigable, cercano y levemente informal. Tuteá siempre (vos/tenés/podés)
-- Optimista y entusiasta: usá signos de exclamación cuando venga al caso ("¡Encontré 12 leyes sobre eso!", "¡Sí! Hay una...")
-- Podés arrancar con una frase breve de enganche ("¡Qué buena pregunta!"), sin exagerar ni repetirla siempre
-- Cerrá con una pregunta breve y cálida de verificación si la respuesta es larga: "¿Quedó claro?". Esto NO es ser proactivo: es solo verificar comprensión, nunca ofrecer buscar más información
-
-FORMATO — INFORMACIÓN FRAGMENTADA:
-- Partí la respuesta en pedacitos digeribles, con párrafos MUY cortos (1 a 3 líneas) separados por líneas en blanco
-- Presentá los resultados en viñetas o lista numerada en vez de encadenarlos en una sola oración
-- Poné en **negrita** los datos clave: números de ley, años y cantidades
-
-EMOJIS:
-- Usá emojis con moderación (aprox. 1 cada 2 o 3 bloques, nunca varios seguidos): 📜 ⚖️ 📅 ✅ 💡 🔎 👉 ⚠️ 🙌
-- El emoji acompaña, nunca reemplaza la información
-
-IMPORTANTE: el tono canchero NO cambia el contenido. No inventes ni agregues datos que no estén en los resultados.
-
-IMPORTANTE SOBRE EL ALCANCE DE LA BASE DE DATOS:
-- La base de datos contiene ÚNICAMENTE leyes APROBADAS, NO proyectos de ley ni leyes "presentadas".
-- Si el usuario preguntó por leyes "presentadas" por alguien, aclarále amablemente que no tenés información sobre leyes presentadas, pero que le mostrás las leyes APROBADAS que tienen relación con su consulta.
-  Ejemplo: "No puedo darte las leyes presentadas porque mi base de datos solo contiene leyes aprobadas, pero te muestro las leyes aprobadas que..."
-- No tenés información sobre votaciones ni sobre quién votó cada ley.
-- NUNCA seas proactivo: no sugieras buscar más información ni ofrezcas cosas adicionales. Limitáte a responder lo que se preguntó."""
+        results_str = json.dumps(results, ensure_ascii=False, default=str)
+        system_prompt = RESPONSE_POLICY + """
+Presentá los resultados de la consulta usando solo los datos recuperados.
+Incluí todas las filas recibidas cuando se solicita un listado.
+Las consultas devuelven como máximo 20 filas: si recibís 20, indicá que se
+muestran hasta 20 resultados, sin afirmar que son el total de coincidencias.
+La base contiene leyes aprobadas, no todos los proyectos presentados.
+Una búsqueda sin coincidencias no demuestra que nunca se presentó un proyecto.
+No hay datos de votaciones. No atribuyas autoría exclusiva a un firmante si
+no hay un campo que identifique expresamente su rol.
+En autorías, rol='autor' identifica al autor del proyecto cabecera según HCDN;
+rol='firmante' no identifica necesariamente al autor principal. Una ley puede
+tener antecedentes adicionales: no atribuyas autoría exclusiva de toda la ley.
+Indicá que los conteos corresponden a los registros disponibles y que la
+cobertura 2008–2025 es parcial. No describas estos datos como todos los proyectos
+presentados. Un bloque es histórico; PODER EJECUTIVO no es un partido.
+Cuando haya fuente_url o fuente_autor_url, citá los enlaces oficiales relevantes.
+"""
 
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Consulta original: {query}\n\nResultados ({len(results)} filas):\n{results_str}"}
+            {"role": "user", "content": query},
+            {"role": "assistant", "content": None, "tool_calls": [{"id": "sql_results", "type": "function", "function": {"name": "consulta_leyes", "arguments": "{}"}}]},
+            {"role": "tool", "tool_call_id": "sql_results", "content": results_str}
         ]
         
         client = self._get_openai_client()
@@ -308,7 +209,7 @@ IMPORTANTE SOBRE EL ALCANCE DE LA BASE DE DATOS:
             model=LLM_MODEL,
             messages=messages,
             temperature=0.3,
-            max_completion_tokens=1000,
+            max_completion_tokens=4000,
         )
         
         return response.choices[0].message.content.strip()
@@ -357,27 +258,14 @@ IMPORTANTE SOBRE EL ALCANCE DE LA BASE DE DATOS:
             )
             
         except sqlite3.Error as e:
-            # Caso conocido: las consultas sobre firmantes/bloques/comisiones
-            # necesitan tablas (leyes_data, firmantes, afiliaciones, etc.) que hoy
-            # NO están en la base temática (cobertura 1997-2025). Esos datos
-            # parlamentarios solo existen para 2023-2025 y en otra base. En vez de
-            # mostrarle al usuario un error técnico ("no such table: leyes_data"),
-            # le explicamos con palabras el alcance real de lo que sí podemos responder.
-            # TODO (ver DEVELOPER_DOC / RESUMEN_AVANCES): incorporar firmantes y
-            # bloques para el corpus histórico 1997+ para levantar esta limitación.
+            # Permite ejecutar el código también sobre una base aún no enriquecida.
             details = str(e)
             if "no such table" in details.lower():
                 return SkillResult(
                     response=(
-                        "Por ahora no tengo cargados los datos de **firmantes, bloques ni "
-                        "trámites parlamentarios** para responder ese tipo de consulta. "
-                        "Mi base de búsqueda cubre el **texto y la ficha de las leyes de 1997 a 2025**, "
-                        "pero la información sobre qué legislador impulsó o firmó cada norma "
-                        "todavía no forma parte de ella.\n\n"
-                        "Sí puedo ayudarte con el **contenido de las leyes**: por ejemplo, qué "
-                        "establece una ley sobre determinado tema, o buscar leyes por materia, "
-                        "número o año. Además, tené en cuenta que **no dispongo de datos de "
-                        "votaciones** (quién votó a favor o en contra de una ley)."
+                        "Los datos necesarios para esa consulta no están disponibles "
+                        "en esta instalación. No puedo confirmar la autoría o el bloque "
+                        "sin consultar los registros correspondientes."
                     ),
                     sources=[],
                     metadata={"error": "missing_parliamentary_tables", "details": details}

@@ -99,8 +99,10 @@ Habilidades disponibles:
 {skill_info}
 
 REGLAS DE DECISIÓN:
-- sql_query: Usar cuando el usuario menciona un NÚMERO DE LEY específico (ej: "ley 27771", "ley 27.771", "decreto 123"), o pide datos estructurados (contar, listar, filtrar por fecha/año).
-- rag: Usar para preguntas conceptuales, interpretaciones, o búsquedas por tema sin número específico.
+- sql_query: Usar para datos estructurados (contar, listar, filtrar por fecha/año, firmantes o bloques).
+- Las preguntas sobre quién propuso, presentó o impulsó una ley usan sql_query;
+  incluye autorías desde 2008 con cobertura parcial. Firmas no son votos.
+- rag: Usar para contenido, artículos o resúmenes de leyes, incluso si hay un número específico o una referencia como «la décima ley».
 
 Respondé ÚNICAMENTE con el nombre de la habilidad más apropiada.
 No agregues explicaciones ni texto adicional, solo el nombre exacto de la habilidad."""
