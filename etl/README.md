@@ -131,6 +131,11 @@ UTF-8, aplicando la misma `normalize_text` del ETL (Fase 3).
 
 ## Chunking de leyes
 
+El enriquecimiento con autores y bloques es independiente del índice. Desde
+`DipuBot/`: `python -m etl.ingest_autorias fetch` y luego
+`python -m etl.ingest_autorias import`.
+Ver [Autores y bloques](../docs/AUTORES_Y_BLOQUES.md) para fuentes y cobertura.
+
 El `LegalSplitter` divide textos largos:
 - Busca límites naturales: ARTÍCULO, Capítulo, Título
 - Chunks de ~24000 caracteres (~6000 tokens)
